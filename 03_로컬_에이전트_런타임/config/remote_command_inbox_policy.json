@@ -1,0 +1,81 @@
+{
+  "version": "2026-03-08",
+  "defaultMode": "manual-review",
+  "defaultConsultProviders": [
+    "chatgpt"
+  ],
+  "targetModeMap": {
+    "browser": "browser-command",
+    "web": "browser-command",
+    "gemini": "browser-command",
+    "chatgpt": "browser-command",
+    "desktop": "desktop-command",
+    "kvm": "desktop-command",
+    "screen": "desktop-command",
+    "llm": "llm-prompt",
+    "report": "llm-prompt",
+    "writing": "llm-prompt",
+    "docs": "llm-prompt"
+  },
+  "keywordModes": {
+    "browser-command": [
+      "browser",
+      "web",
+      "chrome",
+      "open page",
+      "navigate",
+      "search",
+      "gemini",
+      "chatgpt",
+      "website",
+      "tab"
+    ],
+    "desktop-command": [
+      "desktop",
+      "window",
+      "screen",
+      "capture",
+      "screenshot",
+      "mouse",
+      "keyboard",
+      "click",
+      "type",
+      "focus"
+    ],
+    "llm-prompt": [
+      "report",
+      "summary",
+      "summarize",
+      "draft",
+      "write",
+      "plan",
+      "explain",
+      "document"
+    ]
+  },
+  "consultMap": {
+    "browser-command": [
+      "gemini"
+    ],
+    "desktop-command": [
+      "gemini",
+      "chatgpt"
+    ],
+    "llm-prompt": [
+      "chatgpt"
+    ],
+    "manual-review": [
+      "gemini",
+      "chatgpt"
+    ],
+    "spend-approval": [
+      "chatgpt"
+    ],
+    "blocked": [
+      "gemini",
+      "chatgpt"
+    ]
+  },
+  "destructiveApprovalMessage": "Destructive or removal-like commands should stay in manual review until the user explicitly confirms scope.",
+  "manualReviewMessage": "The command did not map cleanly to a safe browser or LLM action. Keep it in manual review."
+}

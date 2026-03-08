@@ -31,4 +31,10 @@ Notes:
 - Continuous-improvement rules live in `config\continuous_improvement_policy.json`.
 - Research notes comparing external agent projects live in `research_notes.md`.
 - Remote command channel config lives in `config\remote_command_channel.json`.
-- Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, `scripts\stop_remote_command_poller.ps1`, `scripts\get_remote_command_queue.ps1`, and `scripts\mark_remote_command_processed.ps1`.
+- Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, `scripts\stop_remote_command_poller.ps1`, `scripts\get_remote_command_queue.ps1`, `scripts\mark_remote_command_processed.ps1`, and `scripts\summarize_remote_command_inbox.ps1`.
+- The normalized inbox digest is written to `state\remote_command_inbox.json` on each poll cycle.
+
+Remote command inbox:
+- `check_remote_commands.ps1` pulls GitHub issues into the local queue.
+- `summarize_remote_command_inbox.ps1` maps queued items to a safe mode, risk level, approval requirement, and suggested consultation providers.
+- The worker keeps `remote_command_inbox.json` fresh so a later executor can consume a preclassified inbox instead of raw issue text.

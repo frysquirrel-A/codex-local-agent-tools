@@ -3,6 +3,7 @@ Local Agent Research Notes
 Consultation summary:
 - Gemini emphasized minimizing LLM round trips and reserving consultation for ambiguous web state, large-context interpretation, and externally changing services.
 - ChatGPT emphasized keeping Codex as the primary executor, treating Gemini and ChatGPT as secondary advisors, and writing explicit operating rules after each improvement.
+- ChatGPT later flagged the next missing layer before safe remote auto-execution: a deterministic pre-execution guardrail with dry-run preview and immutable audit logging.
 
 What to borrow:
 - OpenClaw: one gateway as the source of truth for sessions, routing, and channel state.
@@ -24,3 +25,4 @@ Current improvement targets:
 2. Response completion detection without fixed sleeps.
 3. Structured extraction from active tabs.
 4. Better launcher visibility into active sessions, retries, and last successful provider.
+5. Pre-execution guardrail for remote inbox items, including allow or deny checks, dry-run plans, and tamper-resistant execution logs.

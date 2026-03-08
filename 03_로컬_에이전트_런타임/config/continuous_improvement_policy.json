@@ -67,6 +67,8 @@
     "Add response-complete detection instead of fixed waits.",
     "Add a structured extract action for DOM pages.",
     "Add task queueing with per-task timeouts and retries.",
+    "Add a pre-execution guardrail layer for remote commands with allow or deny rules and dry-run previews.",
+    "Add immutable audit logging for remote command execution with hashes and artifact pointers.",
     "Add a stop file or manual pause signal for long improvement loops.",
     "Add browser session snapshots for reproducible bug reports."
   ]
