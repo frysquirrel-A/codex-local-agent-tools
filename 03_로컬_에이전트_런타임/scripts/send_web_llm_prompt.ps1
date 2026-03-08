@@ -48,9 +48,36 @@ function Resolve-ProviderClient {
         throw "No connected bridge client matched provider '$Provider'."
     }
 
-    $active = @($matched | Where-Object { $_.active })
-    $pool = if ($active.Count -gt 0) { $active } else { $matched }
-    return $pool | Sort-Object timestamp -Descending | Select-Object -First 1
+    $pool = @(
+        $matched |
+        Sort-Object @{ Expression = { if ($_.active) { 0 } else { 1 } } }, @{ Expression = { if ($_.focused) { 0 } else { 1 } } }, @{ Expression = { -1 * [double]$_.timestamp } }
+    )
+
+    foreach ($candidate in $pool) {
+        if (Test-BridgeClientResponsive -ClientId ([string]$candidate.clientId)) {
+            return $candidate
+        }
+    }
+
+    $candidateList = @($pool | ForEach-Object { [string]$_.url })
+    throw "No responsive bridge client matched provider '$Provider'. Candidates: $($candidateList -join ', ')"
+}
+
+function Test-BridgeClientResponsive {
+    param([string]$ClientId)
+
+    try {
+        $raw = & $bridgeWrapper "ping" "--client-id" $ClientId "--timeout" "4" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return $false
+        }
+
+        $payload = $raw | ConvertFrom-Json
+        return [bool]$payload.ok
+    }
+    catch {
+        return $false
+    }
 }
 
 function Write-AgentLog {

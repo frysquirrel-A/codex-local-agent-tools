@@ -1,0 +1,73 @@
+{
+  "version": "2026-03-08",
+  "goal": "Continuously improve the local Codex agent without paid APIs by combining deterministic local execution, browser DOM control, KVM fallback, Git checkpoints, and structured consultation with Gemini and ChatGPT web UIs.",
+  "operatingRules": {
+    "codexSolo": [
+      "Deterministic local file edits, shell commands, git work, backup logic, and test execution.",
+      "Stable DOM actions on pages with known selectors and predictable flows.",
+      "Benchmarking, logging, retry logic, health checks, and other runtime plumbing."
+    ],
+    "consultGemini": [
+      "Current web UI structure, selector drift, screenshot interpretation, and Google product behavior.",
+      "Latest-service behavior where a live page interpretation matters more than pure code reasoning.",
+      "Large text summarization when the source lives in the browser and fast screen or context reading helps."
+    ],
+    "consultChatGPT": [
+      "Script design, refactoring options, structured operating rules, and change summaries.",
+      "Tradeoff analysis between multiple implementation paths.",
+      "Backlog shaping, architecture wording, and report-ready explanations."
+    ],
+    "consultBoth": [
+      "High-risk design changes that affect the runtime architecture.",
+      "New operating policies that will govern future autonomous behavior.",
+      "Cases where Gemini provides page or UI context and ChatGPT provides code or structure context."
+    ],
+    "fallbacks": [
+      "If a provider tab is stale, choose another responsive client for the same provider before giving up.",
+      "If DOM control fails, inspect the screen and only then use KVM fallback.",
+      "If one provider is unavailable, continue with the other provider plus official docs and record the gap."
+    ]
+  },
+  "borrowedPatterns": [
+    {
+      "name": "Single gateway as source of truth",
+      "source": "OpenClaw",
+      "applyToLocalAgent": "Keep one orchestrator responsible for session state, routing, and channel health instead of scattering control logic."
+    },
+    {
+      "name": "Agent loop with explicit tool results",
+      "source": "Claude computer use",
+      "applyToLocalAgent": "Every action should return an observable result, and loops should stop on timeout or iteration limits."
+    },
+    {
+      "name": "Structured action surface",
+      "source": "Stagehand and browser-use",
+      "applyToLocalAgent": "Prefer concise actions like navigate, prompt-send, click-text, extract, and visible-text over free-form UI driving."
+    },
+    {
+      "name": "Local execution and repair loop",
+      "source": "Open Interpreter",
+      "applyToLocalAgent": "Run generated scripts locally, capture stdout or stderr, and feed only the minimal failure context back into the consultation loop."
+    },
+    {
+      "name": "Subordinate specialization with clean context",
+      "source": "Agent Zero and Codex app multi-agent guidance",
+      "applyToLocalAgent": "Keep one main orchestrator, but split work into internal workers or isolated subtasks instead of one giant mixed context."
+    }
+  ],
+  "taskCheckpoints": [
+    "Write or update runtime logs for each provider interaction and each local action.",
+    "Create a git checkpoint when a meaningful improvement lands.",
+    "Store user-facing reports under 02_보고서 and task-specific notes under 01_내_요청.",
+    "Capture a screenshot when UI behavior differs from DOM assumptions.",
+    "Record what was verified, what failed, and what remains risky."
+  ],
+  "nextBacklog": [
+    "Add provider health status reporting to the launcher UI.",
+    "Add response-complete detection instead of fixed waits.",
+    "Add a structured extract action for DOM pages.",
+    "Add task queueing with per-task timeouts and retries.",
+    "Add a stop file or manual pause signal for long improvement loops.",
+    "Add browser session snapshots for reproducible bug reports."
+  ]
+}

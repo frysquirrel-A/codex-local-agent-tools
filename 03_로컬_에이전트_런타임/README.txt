@@ -14,6 +14,7 @@ Fast-path improvements applied:
 - Browser prompt send now uses a single browser-side `prompt_send` action.
 - Normal send mode skips unnecessary `ping` and `dom-summary` preflight calls.
 - Bridge result polling is faster and the extension heartbeat is shorter.
+- Provider selection skips stale bridge clients and prefers a responsive client per provider.
 
 GUI usage:
 - Run `status`, `route`, `consult`, `new-chat`, `watch-start`, and `watch-stop` from buttons.
@@ -27,3 +28,5 @@ Recommended usage:
 Notes:
 - This runtime depends on the browser bridge package under `..\01_브라우저_자동화`.
 - If Chrome is closed, consult mode cannot reach Gemini or ChatGPT until those tabs are open again.
+- Continuous-improvement rules live in `config\continuous_improvement_policy.json`.
+- Research notes comparing external agent projects live in `research_notes.md`.
