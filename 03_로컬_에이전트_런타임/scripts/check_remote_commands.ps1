@@ -37,13 +37,19 @@ if (Test-Path -LiteralPath $queuePath) {
     $queue = @()
 }
 
-$uri = "{0}/repos/{1}/{2}/issues?state=open&labels={3}&sort=created&direction=asc&per_page=30" -f $config.apiBase, $config.owner, $config.repo, $config.label
+$uri = "{0}/repos/{1}/{2}/issues?state=open&sort=created&direction=asc&per_page=30" -f $config.apiBase, $config.owner, $config.repo
 $issues = @(Invoke-RestMethod -Uri $uri -Headers $headers -Method Get)
 $newItems = @()
 $lastSeen = [int]$state.lastSeenIssueNumber
 
 foreach ($issue in $issues) {
     if ($issue.pull_request) {
+        continue
+    }
+
+    $labelMatch = @($issue.labels | Where-Object { [string]$_.name -eq [string]$config.label }).Count -gt 0
+    $titleMatch = ([string]$issue.title).StartsWith([string]$config.titlePrefix, [System.StringComparison]::OrdinalIgnoreCase)
+    if (-not $labelMatch -and -not $titleMatch) {
         continue
     }
 

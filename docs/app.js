@@ -2,6 +2,7 @@ const REPO_OWNER = "frysquirrel-A";
 const REPO_NAME = "codex-local-agent-tools";
 const ISSUE_TEMPLATE = "remote-command.md";
 const ISSUE_LABEL = "remote-command";
+const TITLE_PREFIX = "[remote]";
 
 function buildIssueBody(payload) {
   return [
@@ -36,15 +37,22 @@ function buildIssueUrl(payload) {
 async function loadIssues() {
   const issueList = document.getElementById("issue-list");
   try {
-    const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=open&labels=${ISSUE_LABEL}&per_page=10`);
+    const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=open&per_page=20`);
     const issues = await response.json();
-    if (!Array.isArray(issues) || issues.length === 0) {
+    const filtered = Array.isArray(issues)
+      ? issues.filter((issue) => {
+          const labels = Array.isArray(issue.labels) ? issue.labels.map((item) => item.name) : [];
+          return labels.includes(ISSUE_LABEL) || (issue.title || "").startsWith(TITLE_PREFIX);
+        })
+      : [];
+
+    if (filtered.length === 0) {
       issueList.innerHTML = '<p class="muted">현재 열려 있는 원격 명령이 없습니다.</p>';
       return;
     }
 
     issueList.innerHTML = "";
-    issues.forEach((issue) => {
+    filtered.forEach((issue) => {
       const card = document.createElement("article");
       card.className = "issue-card";
       card.innerHTML = `
