@@ -178,6 +178,42 @@ button#copy-body {
   color: var(--muted);
 }
 
+.issue-head {
+  display: grid;
+  gap: 10px;
+}
+
+.pill-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0, 78, 100, 0.08);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.state-pill.is-open {
+  background: rgba(0, 78, 100, 0.12);
+  color: var(--accent);
+}
+
+.state-pill.is-closed {
+  background: rgba(47, 111, 74, 0.14);
+  color: #2f6f4a;
+}
+
+.issue-preview {
+  margin-top: 10px;
+}
+
 .meta {
   display: flex;
   gap: 10px;

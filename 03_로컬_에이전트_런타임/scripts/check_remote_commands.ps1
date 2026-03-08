@@ -144,7 +144,7 @@ foreach ($item in $queue) {
 
 $uri = "{0}/repos/{1}/{2}/issues?state=open&sort=created&direction=asc&per_page=30" -f $config.apiBase, $config.owner, $config.repo
 $issueResponse = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
-$issues = foreach ($issue in @($issueResponse)) { $issue }
+$issues = foreach ($issue in $issueResponse) { $issue }
 $newItems = @()
 $lastSeen = [int]$state.lastSeenIssueNumber
 

@@ -38,6 +38,7 @@ Remote command inbox:
 - `check_remote_commands.ps1` pulls GitHub issues into the local queue and uses the local git credential token to avoid anonymous API rate limits.
 - `summarize_remote_command_inbox.ps1` maps queued items to a safe mode, risk level, approval requirement, and suggested consultation providers.
 - `execute_remote_command_inbox.ps1` handles owner-only structured commands, writes dry-run artifacts, posts GitHub issue comments through the local git credential token, and closes successful issues.
+- The executor uses per-issue lock files under `state\remote_command_locks` so the worker and manual runs do not process the same command twice at the same time.
 - The worker keeps `remote_command_inbox.json` fresh and then runs the executor each poll cycle.
 
 Structured remote command v1:

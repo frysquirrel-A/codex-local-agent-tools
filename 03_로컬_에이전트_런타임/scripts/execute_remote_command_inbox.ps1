@@ -14,6 +14,7 @@ $browserRoot = Get-ChildItem -LiteralPath $toolRoot -Directory | Where-Object { 
 $desktopRoot = Get-ChildItem -LiteralPath $toolRoot -Directory | Where-Object { $_.Name -like "02_*" } | Select-Object -First 1 -ExpandProperty FullName
 $configDir = Join-Path $packageRoot "config"
 $stateDir = Join-Path $packageRoot "state"
+$lockDir = Join-Path $stateDir "remote_command_locks"
 $logDir = Join-Path $packageRoot "logs"
 $queuePath = Join-Path $stateDir "remote_command_queue.json"
 $logPath = Join-Path $logDir "remote_executor.jsonl"
@@ -35,6 +36,10 @@ if (-not $desktopRoot) {
 
 if (-not (Test-Path -LiteralPath $logDir)) {
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+}
+
+if (-not (Test-Path -LiteralPath $lockDir)) {
+    New-Item -ItemType Directory -Force -Path $lockDir | Out-Null
 }
 
 function Read-JsonFile {
@@ -204,6 +209,28 @@ function Set-QueueStatus {
     }
 
     $items | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $queuePath -Encoding UTF8
+}
+
+function Acquire-ExecutionLock {
+    param([int]$Number)
+
+    $path = Join-Path $lockDir ("issue_{0}.lock" -f $Number)
+    try {
+        New-Item -ItemType File -Path $path -Force:$false -ErrorAction Stop | Out-Null
+        Set-Content -LiteralPath $path -Value (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") -Encoding UTF8
+        return $path
+    }
+    catch {
+        return $null
+    }
+}
+
+function Release-ExecutionLock {
+    param([string]$Path)
+
+    if ($Path -and (Test-Path -LiteralPath $Path)) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Get-QueueItems {
@@ -663,53 +690,66 @@ foreach ($item in $items) {
     $startedAt = Get-Date
     $artifactDir = Join-Path $artifactRoot ("issue_{0}_{1}" -f [int]$item.number, ($startedAt.ToString("yyyyMMdd_HHmmss")))
     New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+    $lockPath = Acquire-ExecutionLock -Number ([int]$item.number)
 
-    $spec = Try-ParseStructuredCommand -Text (Get-TextValue -Value $item.command)
-    $decision = Get-ExecutionDecision -Item $item -Spec $spec
-    $plan = [ordered]@{
-        issueNumber = [int]$item.number
-        issueTitle = [string]$item.title
-        issueUser = [string]$item.user
-        issueUrl = [string]$item.url
-        requestedAt = [string]$item.requestedAt
-        dryRunOnly = [bool]$DryRunOnly
-        decision = $decision
-        structuredCommand = $spec
-    }
-    $planPath = Join-Path $artifactDir "plan.json"
-    $planHash = Save-JsonArtifact -Path $planPath -Payload $plan
-
-    Write-ExecutorLog -Phase "plan" -Payload @{
-        issueNumber = [int]$item.number
-        issueUser = [string]$item.user
-        outcome = [string]$decision.outcome
-        shouldExecute = [bool]$decision.shouldExecute
-        planHash = $planHash
-    }
-
-    if (-not $decision.shouldExecute -or $DryRunOnly) {
-        $status = if ($DryRunOnly) { "pending" } else { [string]$decision.status }
-        $resultMessage = if ($DryRunOnly) { "dry-run created" } else { [string]$decision.reason }
-        Set-QueueStatus -Number ([int]$item.number) -Status $status -Result $resultMessage
-
-        if ($decision.shouldComment) {
-            $commentBody = Get-CommentBody -Status (if ($DryRunOnly) { "dry-run" } else { [string]$decision.outcome }) -QueueItem $item -Spec $spec -PlanHash $planHash -ResultHash "" -Message $resultMessage
-            Add-IssueComment -Owner $channel.owner -Repo $channel.repo -Number ([int]$item.number) -Body $commentBody | Out-Null
+    if (-not $lockPath) {
+        Write-ExecutorLog -Phase "skipped-locked" -Payload @{
+            issueNumber = [int]$item.number
         }
-
         $results += [ordered]@{
             number = [int]$item.number
-            outcome = if ($DryRunOnly) { "dry-run" } else { [string]$decision.outcome }
-            status = $status
-            reason = $resultMessage
-            planPath = $planPath
+            outcome = "skipped-locked"
+            status = [string]$item.status
+            reason = "Another executor already holds the issue lock."
         }
         continue
     }
 
-    Set-QueueStatus -Number ([int]$item.number) -Status "pending" -Result "execution started"
-
     try {
+        $spec = Try-ParseStructuredCommand -Text (Get-TextValue -Value $item.command)
+        $decision = Get-ExecutionDecision -Item $item -Spec $spec
+        $plan = [ordered]@{
+            issueNumber = [int]$item.number
+            issueTitle = [string]$item.title
+            issueUser = [string]$item.user
+            issueUrl = [string]$item.url
+            requestedAt = [string]$item.requestedAt
+            dryRunOnly = [bool]$DryRunOnly
+            decision = $decision
+            structuredCommand = $spec
+        }
+        $planPath = Join-Path $artifactDir "plan.json"
+        $planHash = Save-JsonArtifact -Path $planPath -Payload $plan
+
+        Write-ExecutorLog -Phase "plan" -Payload @{
+            issueNumber = [int]$item.number
+            issueUser = [string]$item.user
+            outcome = [string]$decision.outcome
+            shouldExecute = [bool]$decision.shouldExecute
+            planHash = $planHash
+        }
+
+        if (-not $decision.shouldExecute -or $DryRunOnly) {
+            $status = if ($DryRunOnly) { "pending" } else { [string]$decision.status }
+            $resultMessage = if ($DryRunOnly) { "dry-run created" } else { [string]$decision.reason }
+            Set-QueueStatus -Number ([int]$item.number) -Status $status -Result $resultMessage
+
+            if ($decision.shouldComment) {
+                $commentBody = Get-CommentBody -Status (if ($DryRunOnly) { "dry-run" } else { [string]$decision.outcome }) -QueueItem $item -Spec $spec -PlanHash $planHash -ResultHash "" -Message $resultMessage
+                Add-IssueComment -Owner $channel.owner -Repo $channel.repo -Number ([int]$item.number) -Body $commentBody | Out-Null
+            }
+
+            $results += [ordered]@{
+                number = [int]$item.number
+                outcome = if ($DryRunOnly) { "dry-run" } else { [string]$decision.outcome }
+                status = $status
+                reason = $resultMessage
+                planPath = $planPath
+            }
+            continue
+        }
+
+        Set-QueueStatus -Number ([int]$item.number) -Status "pending" -Result "execution started"
         $executionResult = Invoke-StructuredSpec -Spec $spec -ArtifactDir $artifactDir
         $resultPath = Join-Path $artifactDir "result.json"
         $resultHash = Save-JsonArtifact -Path $resultPath -Payload $executionResult
@@ -769,6 +809,9 @@ foreach ($item in $items) {
             planPath = $planPath
             resultPath = $resultPath
         }
+    }
+    finally {
+        Release-ExecutionLock -Path $lockPath
     }
 }
 
