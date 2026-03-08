@@ -1,0 +1,33 @@
+﻿{
+  "name": "study-live-chrome-bridge",
+  "version": "0.3.0",
+  "localOnly": true,
+  "paidApiRequired": false,
+  "description": "Live Chrome DOM bridge for local browser automation without external paid APIs.",
+  "entrypoints": {
+    "server": "live_bridge_server.py",
+    "start": "start_live_bridge_server.ps1",
+    "stop": "stop_live_bridge_server.ps1",
+    "commandCli": "send_live_page_command.py",
+    "commandWrapper": "send_live_page_command.ps1",
+    "extension": "live_extension/manifest.json"
+  },
+  "capabilities": [
+    "dom_summary",
+    "status",
+    "visible_text",
+    "navigate",
+    "set_text",
+    "click",
+    "click_text",
+    "client_targeting"
+  ],
+  "runtime": {
+    "host": "127.0.0.1",
+    "port": 8765
+  },
+  "notes": [
+    "Uses the user's logged-in Chrome web session.",
+    "Does not call any external paid API from local code."
+  ]
+}

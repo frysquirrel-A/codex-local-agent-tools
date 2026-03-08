@@ -1,0 +1,76 @@
+﻿{
+  "localOnly": true,
+  "paidApiRequired": false,
+  "preferDomBeforeKvm": true,
+  "defaultRisk": "normal",
+  "blockedCategories": {
+    "financialExecution": {
+      "allow": false,
+      "message": "Financial execution is blocked in autonomous mode. Keep stock, order, payment, and transfer actions manual."
+    }
+  },
+  "approvalCategories": {
+    "spendingApproval": {
+      "allow": true,
+      "message": "Paid actions should go through the printed spend approval workflow before execution."
+    }
+  },
+  "keywordGroups": {
+    "financialExecution": [
+      "주식",
+      "증권",
+      "매수",
+      "매도",
+      "주문",
+      "투자",
+      "매매",
+      "송금",
+      "이체",
+      "코인",
+      "crypto",
+      "stock",
+      "broker",
+      "trade",
+      "buy order",
+      "sell order"
+    ],
+    "spendingApproval": [
+      "과금",
+      "유료",
+      "구독",
+      "subscription",
+      "upgrade",
+      "license",
+      "purchase",
+      "buy",
+      "결제",
+      "구매",
+      "pro 사용권",
+      "월 요금",
+      "연간 요금"
+    ],
+    "destructive": [
+      "삭제",
+      "지우기",
+      "remove",
+      "erase",
+      "format",
+      "reset"
+    ]
+  },
+  "modes": {
+    "llm-prompt": {
+      "requiresApproval": false
+    },
+    "browser-command": {
+      "requiresApproval": false
+    },
+    "desktop-command": {
+      "requiresApproval": true
+    },
+    "spend-approval": {
+      "requiresApproval": true,
+      "requiresPrintedReport": true
+    }
+  }
+}

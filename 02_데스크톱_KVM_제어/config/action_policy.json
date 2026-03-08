@@ -1,0 +1,38 @@
+{
+  "policyVersion": 1,
+  "defaultLevel": "critical",
+  "actions": {
+    "screen-size": {
+      "level": "read_only",
+      "requiresApproval": false
+    },
+    "cursor-pos": {
+      "level": "read_only",
+      "requiresApproval": false
+    },
+    "list-windows": {
+      "level": "read_only",
+      "requiresApproval": false
+    },
+    "focus-window": {
+      "level": "caution",
+      "requiresApproval": true
+    },
+    "move": {
+      "level": "caution",
+      "requiresApproval": true
+    },
+    "click": {
+      "level": "critical",
+      "requiresApproval": true
+    },
+    "type": {
+      "level": "critical",
+      "requiresApproval": true
+    },
+    "combo": {
+      "level": "critical",
+      "requiresApproval": true
+    }
+  }
+}

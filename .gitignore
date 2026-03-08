@@ -1,0 +1,11 @@
+.git/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pid
+01_브라우저_자동화/logs/
+01_브라우저_자동화/live_bridge_server.pid
+02_데스크톱_KVM_제어/captures/
+02_데스크톱_KVM_제어/logs/
+03_로컬_에이전트_런타임/logs/
+03_로컬_에이전트_런타임/latest/

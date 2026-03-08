@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Study Live Chrome Bridge",
+  "version": "0.1.0",
+  "description": "Local bridge for controlling the current live Chrome page from study folder tools.",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Study Live Chrome Bridge"
+  }
+}

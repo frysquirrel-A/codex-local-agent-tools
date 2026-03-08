@@ -1,0 +1,45 @@
+﻿{
+  "name": "local-pc-agent-runtime",
+  "version": "0.3.0",
+  "localOnly": true,
+  "paidApiRequired": false,
+  "description": "Task-level local PC runtime that coordinates Chrome DOM control, Windows KVM control, and web LLM prompting without paid APIs.",
+  "entrypoints": {
+    "taskRunner": "scripts/invoke_local_agent_task.ps1",
+    "orchestrator": "scripts/invoke_agent_orchestrator.ps1",
+    "llmPrompt": "scripts/send_web_llm_prompt.ps1",
+    "collaborationRouter": "scripts/select_collaboration_route.ps1",
+    "launcherBuilder": "scripts/build_agent_launcher.ps1",
+    "launcherExe": "bin/CodexLocalAgentLauncher.exe",
+    "spendReportBuilder": "scripts/build_spend_approval_report.ps1",
+    "spendReportPrinter": "scripts/print_spend_approval_report.ps1",
+    "policy": "config/agent_policy.json",
+    "collaborationPolicy": "config/llm_collaboration_policy.json",
+    "llmProfiles": "config/web_llm_profiles.json",
+    "browserBridge": "../01_브라우저_자동화/send_live_page_command.ps1",
+    "desktopGuard": "../02_데스크톱_KVM_제어/scripts/guarded_desktop_action.ps1"
+  },
+  "capabilities": [
+    "browser_dom_task_dispatch",
+    "desktop_kvm_task_dispatch",
+    "gemini_web_ui_prompt",
+    "chatgpt_web_ui_prompt",
+    "llm_collaboration_routing",
+    "web_llm_model_selection_policy",
+    "single_entry_orchestrator",
+    "optional_exe_launcher",
+    "screen_capture",
+    "screen_watch_loop",
+    "printed_spend_approval_queue",
+    "jsonl_task_audit",
+    "risk_gate_for_high_risk_actions"
+  ],
+  "notes": [
+    "Uses the user's existing local Chrome web session.",
+    "Does not call external paid APIs from local code.",
+    "Financial execution is intentionally not opened for autonomous runs.",
+    "Paid actions are routed through a printed approval workflow.",
+    "Consultation with Gemini or ChatGPT is guided by a local routing policy rather than ad hoc use.",
+    "The launcher EXE is a thin wrapper around the local PowerShell orchestrator."
+  ]
+}

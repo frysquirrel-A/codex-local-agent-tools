@@ -1,0 +1,4 @@
+captures/
+__pycache__/
+logs/activity.log
+logs/activity.jsonl

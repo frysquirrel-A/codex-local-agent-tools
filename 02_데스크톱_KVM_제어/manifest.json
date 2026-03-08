@@ -1,0 +1,24 @@
+{
+  "name": "desktop-kvm-control",
+  "version": "0.2.0",
+  "localOnly": true,
+  "paidApiRequired": false,
+  "description": "Windows desktop control package for mouse, keyboard, window focus, and screen capture.",
+  "entrypoints": {
+    "skill": "SKILL.md",
+    "core": "scripts/desktop_control.py",
+    "guarded": "scripts/guarded_desktop_action.ps1",
+    "capture": "scripts/capture_screen.ps1"
+  },
+  "permissions": [
+    "window_focus",
+    "mouse_input",
+    "keyboard_input",
+    "screen_capture"
+  ],
+  "policy": {
+    "config": "config/action_policy.json",
+    "approvalScript": "scripts/request_approval.ps1",
+    "logPath": "logs/activity.jsonl"
+  }
+}
