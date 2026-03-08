@@ -7,6 +7,7 @@
   - 통합 실행기: scripts\invoke_agent_orchestrator.ps1
   - EXE 런처: bin\CodexLocalAgentLauncher.exe
 - 99_공용_유틸: 여러 요청에서 재사용할 공통 실행 파일과 보조 유틸
+  - Git 체크포인트: 99_공용_유틸\scripts\checkpoint_tool_repo.ps1
 
 메모:
 - 공부용 루트에는 브라우저 자동화 호환 링크가 숨김 처리되어 있을 수 있습니다.

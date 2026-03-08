@@ -1,10 +1,13 @@
 공용 유틸
 
-이 폴더는 특정 요청 결과가 아니라 여러 작업에서 재사용할 실행 파일과 보조 유틸을 둡니다.
+용도:
+- PDF 인쇄용 외부 실행 파일 보관
+- 여러 요청 스크립트에서 공용으로 참조
+- `00_Codex_도구` 저장소용 Git 체크포인트 보조 스크립트 제공
 
-현재 포함:
-- SumatraPDF-3.5.2-64: PDF 무인 출력용 포터블 실행 파일
+구성:
+- `SumatraPDF-3.5.2-64`
+- `scripts\checkpoint_tool_repo.ps1`
 
-원칙:
-- 요청별 산출물 폴더(01_내_요청)에서 꺼내 쓸 만한 유틸은 가능하면 이쪽으로 올립니다.
-- 반대로 특정 작업에만 필요한 로그, 보고서, 임시 스크립트는 요청 폴더에 둡니다.
+예시:
+- `powershell -ExecutionPolicy Bypass -File .\scripts\checkpoint_tool_repo.ps1 -Message "Checkpoint after runtime changes"`
