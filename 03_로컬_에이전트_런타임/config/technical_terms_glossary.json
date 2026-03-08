@@ -1,0 +1,155 @@
+[
+  {
+    "id": "api",
+    "term": "API",
+    "aliases": ["API", "Application Programming Interface"],
+    "meaning": "서로 다른 프로그램이 정해진 형식과 규칙으로 기능이나 데이터를 주고받는 접점이다.",
+    "plainExplanation": "사람이 웹사이트 버튼을 누르는 대신, 프로그램끼리 약속된 문과 형식으로 대화하는 통로라고 보면 된다.",
+    "whyItMatters": "유료 API를 쓰는지, 무료 웹 UI를 쓰는지에 따라 비용 구조와 구현 방식이 크게 달라진다.",
+    "projectContext": "이 프로젝트는 가능하면 유료 API 대신 로컬 스크립트와 로그인된 웹 UI를 우선 사용한다."
+  },
+  {
+    "id": "dom",
+    "term": "DOM",
+    "aliases": ["DOM", "Document Object Model"],
+    "meaning": "브라우저가 웹페이지의 구조를 요소 단위로 표현한 내부 트리 구조다.",
+    "plainExplanation": "웹페이지를 화면 그림이 아니라 버튼, 입력창, 문단 같은 부품 목록으로 다루게 해 주는 구조다.",
+    "whyItMatters": "DOM을 직접 제어하면 마우스와 키보드 신호보다 빠르고 안정적으로 자동화할 수 있다.",
+    "projectContext": "브라우저 자동화는 KVM보다 DOM 제어를 우선한다."
+  },
+  {
+    "id": "kvm",
+    "term": "KVM",
+    "aliases": ["KVM", "keyboard-video-mouse"],
+    "meaning": "키보드 입력, 화면 관찰, 마우스 조작을 사람 대신 다루는 제어 방식이다.",
+    "plainExplanation": "사람이 직접 PC 앞에서 키보드와 마우스를 쓰는 행동을 소프트웨어가 대신 흉내 내는 방식이다.",
+    "whyItMatters": "DOM 제어가 막히는 UI에서도 마지막 수단으로 작업을 이어갈 수 있다.",
+    "projectContext": "이 시스템에서는 KVM을 예외 처리와 복구 수단으로만 사용한다."
+  },
+  {
+    "id": "orchestrator",
+    "term": "orchestrator",
+    "aliases": ["orchestrator", "오케스트레이터"],
+    "meaning": "여러 스크립트와 모듈의 실행 순서를 결정하고 전체 흐름을 조정하는 중앙 실행기다.",
+    "plainExplanation": "작업 지휘자처럼 각 도구가 언제 무엇을 할지 순서를 잡아 주는 중심 프로그램이다.",
+    "whyItMatters": "진입점이 하나여야 상태 추적과 장애 복구가 쉬워지고, 무한 분기나 중복 실행을 줄일 수 있다.",
+    "projectContext": "로컬 에이전트 런타임은 단일 orchestrator를 기준으로 설계한다."
+  },
+  {
+    "id": "poller",
+    "term": "poller",
+    "aliases": ["poller", "폴러"],
+    "meaning": "외부 상태를 일정 주기로 확인해 새 입력이나 변경 사항을 가져오는 루프다.",
+    "plainExplanation": "문 앞 초인종을 기다리는 대신, 누가 왔는지 몇 초마다 확인하러 나가는 감시자라고 보면 된다.",
+    "whyItMatters": "메신저나 원격 명령 채널이 푸시 알림을 직접 주지 못할 때도 입력을 놓치지 않게 해 준다.",
+    "projectContext": "GitHub Issue 기반 원격 명령 채널은 poller가 주기적으로 확인한다."
+  },
+  {
+    "id": "worker",
+    "term": "worker",
+    "aliases": ["worker", "워커"],
+    "meaning": "큐에 쌓인 작업을 실제로 처리하는 실행 주체다.",
+    "plainExplanation": "관리자가 일을 분류하면 실제로 손발이 되어 처리하는 현장 실행 담당자에 가깝다.",
+    "whyItMatters": "수집, 분류, 실행을 분리하면 같은 작업을 중복 처리할 가능성을 낮출 수 있다.",
+    "projectContext": "원격 명령 시스템은 poller와 worker를 분리해 상태를 관리한다."
+  },
+  {
+    "id": "heartbeat",
+    "term": "heartbeat",
+    "aliases": ["heartbeat", "하트비트"],
+    "meaning": "프로세스나 브리지 클라이언트가 아직 살아 있고 응답 가능한지 주기적으로 남기는 상태 신호다.",
+    "plainExplanation": "심장 박동처럼 '아직 살아 있다'는 표시를 계속 남기는 신호라고 보면 된다.",
+    "whyItMatters": "화면은 멈춘 것처럼 보여도 실제 작업이 살아 있는지 판단할 수 있다.",
+    "projectContext": "브라우저 브리지와 원격 명령 worker는 heartbeat 파일로 상태를 남긴다."
+  },
+  {
+    "id": "github-pages",
+    "term": "GitHub Pages",
+    "aliases": ["GitHub Pages"],
+    "meaning": "GitHub 저장소 내용을 정적 웹사이트로 무료 배포하는 호스팅 기능이다.",
+    "plainExplanation": "코드 저장소에 올린 HTML, CSS, JS를 바로 웹사이트처럼 보여 주는 무료 공간이다.",
+    "whyItMatters": "추가 서버 비용 없이 원격 명령용 간단한 웹 포털을 만들 수 있다.",
+    "projectContext": "원격 명령 포털은 GitHub Pages를 사용한다."
+  },
+  {
+    "id": "github-issue",
+    "term": "GitHub Issue",
+    "aliases": ["GitHub Issue", "Issue"],
+    "meaning": "저장소에서 할 일, 문제, 제안을 기록하고 추적하는 항목이다.",
+    "plainExplanation": "게시판 글처럼 남겨 두고, 진행 상태와 댓글을 함께 기록하는 작업 카드라고 보면 된다.",
+    "whyItMatters": "무료이면서 기록과 상태 추적이 쉬워 원격 명령 입력 채널로 재활용하기 좋다.",
+    "projectContext": "원격 명령 포털은 GitHub Issue를 큐 입력 채널로 사용한다."
+  },
+  {
+    "id": "json",
+    "term": "JSON",
+    "aliases": ["JSON"],
+    "meaning": "키와 값을 묶어서 데이터를 구조적으로 표현하는 텍스트 형식이다.",
+    "plainExplanation": "컴퓨터가 읽기 쉽게 정리된 메모 양식이라고 보면 된다.",
+    "whyItMatters": "자연어보다 해석이 명확해서 원격 명령이나 로그를 안전하게 다루기 쉽다.",
+    "projectContext": "원격 명령, 상태 파일, 결과 아티팩트는 JSON 형식을 많이 쓴다."
+  },
+  {
+    "id": "pdf",
+    "term": "PDF",
+    "aliases": ["PDF"],
+    "meaning": "문서 모양을 기기와 상관없이 비교적 동일하게 유지하는 고정형 문서 형식이다.",
+    "plainExplanation": "다른 PC나 프린터로 옮겨도 레이아웃이 크게 바뀌지 않게 묶어 주는 문서 포맷이다.",
+    "whyItMatters": "보고서 인쇄나 보관, 전달 시 모양이 틀어지지 않도록 하기 위해 자주 사용한다.",
+    "projectContext": "보고서와 복구 매뉴얼은 PDF로 생성하고 인쇄한다."
+  },
+  {
+    "id": "queue",
+    "term": "queue",
+    "aliases": ["queue", "큐"],
+    "meaning": "들어온 작업을 순서대로 쌓아 두고 차례대로 처리하는 대기열 구조다.",
+    "plainExplanation": "번호표를 뽑고 순서대로 불리는 줄이라고 생각하면 된다.",
+    "whyItMatters": "원격 명령이 동시에 들어와도 순서와 상태를 잃지 않고 관리할 수 있다.",
+    "projectContext": "원격 명령과 과금 승인 요청은 큐 형태로 다룬다."
+  },
+  {
+    "id": "cli",
+    "term": "CLI",
+    "aliases": ["CLI", "command-line interface"],
+    "meaning": "버튼 대신 텍스트 명령으로 프로그램을 조작하는 인터페이스다.",
+    "plainExplanation": "마우스로 누르지 않고 명령문을 직접 입력해 작업시키는 방식이다.",
+    "whyItMatters": "자동화하기 쉽고 재현성이 높아서 배치 작업과 도구 체인에 적합하다.",
+    "projectContext": "여러 런타임 도구와 인쇄 경로는 CLI 방식으로 안정화했다."
+  },
+  {
+    "id": "gui",
+    "term": "GUI",
+    "aliases": ["GUI", "graphical user interface"],
+    "meaning": "창, 버튼, 입력창처럼 화면 요소를 눈으로 보고 조작하는 인터페이스다.",
+    "plainExplanation": "우리가 보통 프로그램을 켰을 때 마우스로 누르는 화면 자체라고 보면 된다.",
+    "whyItMatters": "사용자가 직접 실행할 때는 GUI가 편하지만, 자동화할 때는 오히려 불안정한 경로가 될 수 있다.",
+    "projectContext": "가능하면 CLI나 DOM을 우선하고, GUI는 확인과 보조 실행에 사용한다."
+  },
+  {
+    "id": "vhdx",
+    "term": "VHDX",
+    "aliases": ["VHDX"],
+    "meaning": "Windows에서 가상 디스크 이미지를 저장할 때 쓰는 파일 형식이다.",
+    "plainExplanation": "실제 디스크를 통째로 큰 파일 하나로 떠 놓은 백업 상자라고 보면 된다.",
+    "whyItMatters": "장애가 났을 때 파일 몇 개만이 아니라 디스크 상태 전체를 복구하는 데 유용하다.",
+    "projectContext": "시스템 스냅샷 백업에서는 VHDX 이미지를 사용했다."
+  },
+  {
+    "id": "wbadmin",
+    "term": "wbadmin",
+    "aliases": ["wbadmin"],
+    "meaning": "Windows 기본 백업과 시스템 이미지 작업을 다루는 관리자용 명령줄 도구다.",
+    "plainExplanation": "Windows가 기본 제공하는 공식 백업 명령 도구라고 생각하면 된다.",
+    "whyItMatters": "시스템 이미지 백업을 시도할 때 가장 먼저 검토하는 공식 경로다.",
+    "projectContext": "숨김 시스템 파티션 조건 때문에 실패한 뒤 다른 방식으로 우회했다."
+  },
+  {
+    "id": "disk2vhd",
+    "term": "Disk2vhd",
+    "aliases": ["Disk2vhd"],
+    "meaning": "실제 디스크나 파티션을 VHD/VHDX 이미지 파일로 떠 주는 Microsoft Sysinternals 도구다.",
+    "plainExplanation": "컴퓨터 디스크 내용을 큰 이미지 파일로 복사해 두는 전문 백업 도구다.",
+    "whyItMatters": "공식 시스템 이미지 백업이 막힐 때 대체 수단으로 전체 상태를 보존할 수 있다.",
+    "projectContext": "wbadmin이 실패한 뒤 Disk2vhd로 시스템 스냅샷을 생성했다."
+  }
+]

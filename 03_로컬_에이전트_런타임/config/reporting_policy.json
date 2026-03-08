@@ -1,0 +1,23 @@
+{
+  "version": "2026-03-08",
+  "locale": "ko-KR",
+  "appendix": {
+    "enabledWhenTechnicalTermsExist": true,
+    "sectionTitle": "부록 A. 용어 설명",
+    "entryOrder": [
+      "term",
+      "meaning",
+      "plainExplanation",
+      "whyItMatters",
+      "projectContext"
+    ]
+  },
+  "rules": [
+    "User-facing reports, manuals, PDFs, and printed outputs should include a glossary appendix when technical terms appear in the body.",
+    "Each glossary item should explain the exact meaning first and then restate it in plain Korean.",
+    "Each glossary item should say why the term matters in the specific task or system, not just define it abstractly.",
+    "If a term affects cost, recovery, security, automation behavior, backup, or approval flow, keep it in the appendix even if it appears only once.",
+    "If the report contains no technical terms, the glossary appendix may be omitted."
+  ],
+  "defaultCatalogPath": "config/technical_terms_glossary.json"
+}

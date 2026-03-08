@@ -1,7 +1,7 @@
 Local Agent Runtime
 
 Purpose:
-- Orchestrate local browser control, LLM web prompting, and optional screen watch.
+- Orchestrate local browser control, LLM web prompting, remote command handling, and optional screen watch.
 - Keep the main flow on one launcher entry point.
 
 Main entry points:
@@ -29,6 +29,8 @@ Notes:
 - This runtime depends on the browser bridge package under `..\01_브라우저_자동화`.
 - If Chrome is closed, consult mode cannot reach Gemini or ChatGPT until those tabs are open again.
 - Continuous-improvement rules live in `config\continuous_improvement_policy.json`.
+- Report-writing rules live in `config\reporting_policy.json`.
+- Common glossary terms for reports live in `config\technical_terms_glossary.json`.
 - Research notes comparing external agent projects live in `research_notes.md`.
 - Remote command channel config lives in `config\remote_command_channel.json`.
 - Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, `scripts\stop_remote_command_poller.ps1`, `scripts\get_remote_command_queue.ps1`, `scripts\mark_remote_command_processed.ps1`, `scripts\summarize_remote_command_inbox.ps1`, and `scripts\execute_remote_command_inbox.ps1`.
@@ -47,3 +49,8 @@ Structured remote command v1:
 - Example LLM command: `{"mode":"llm-prompt","provider":"chatgpt","prompt":"Summarize the current page.","send":true}`
 - Example desktop command: `{"mode":"desktop-command","action":"screen-size"}`
 - Non-JSON commands stay in manual review.
+
+Report appendix rule:
+- User-facing reports, manuals, and printed PDFs should include `부록 A. 용어 설명` when technical terms appear.
+- Each glossary item should explain the exact meaning, a plain-language explanation, why the term matters, and how it is used in this project.
+- `scripts\build_spend_approval_report.ps1` now auto-detects glossary terms from the shared catalog and appends the glossary section to the HTML/PDF output.
