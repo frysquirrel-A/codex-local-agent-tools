@@ -3,177 +3,75 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Codex Command Talk</title>
+  <title>Codex Chat Room</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <main class="app-shell">
-    <header class="app-bar">
-      <div class="brand-block">
-        <p class="brand-kicker">Codex Remote</p>
-        <h1>Command Talk</h1>
-        <p class="brand-copy">채팅처럼 지시하고, 완료되면 핵심만 짧게 받는 원격 작업 창구</p>
+  <main class="room-shell">
+    <header class="room-bar">
+      <div class="room-profile">
+        <div class="profile-badge">CX</div>
+        <div>
+          <p class="room-kicker">Local Codex Messenger</p>
+          <h1>Codex</h1>
+          <p id="connection-copy" class="connection-copy">같은 PC의 로컬 relay를 찾는 중</p>
+        </div>
       </div>
-      <div class="app-status">
-        <span class="status-dot"></span>
-        <span id="sync-state">GitHub와 동기화 대기</span>
-        <span class="status-divider"></span>
-        <span id="last-sync">방금 전</span>
+
+      <div class="room-actions">
+        <span id="connection-chip" class="connection-chip is-searching">연결 확인 중</span>
+        <button type="button" id="new-session" class="top-button">새 대화</button>
       </div>
     </header>
 
-    <section class="workspace-grid">
-      <aside class="sidebar-panel">
-        <section class="sidebar-card stats-card">
-          <div class="sidebar-head">
-            <p class="section-kicker">Live Queue</p>
-            <h2>한눈에 보기</h2>
-          </div>
-          <div class="stats-grid">
-            <article>
-              <span class="stat-label">전체</span>
-              <strong id="stat-total">0</strong>
-            </article>
-            <article>
-              <span class="stat-label">대기</span>
-              <strong id="stat-open">0</strong>
-            </article>
-            <article>
-              <span class="stat-label">완료</span>
-              <strong id="stat-done">0</strong>
-            </article>
-            <article>
-              <span class="stat-label">긴급</span>
-              <strong id="stat-urgent">0</strong>
-            </article>
-          </div>
-        </section>
+    <section class="room-stage">
+      <div id="room-thread" class="room-thread">
+        <div class="welcome-card">
+          <p class="welcome-kicker">Chat Room</p>
+          <strong>Codex 채팅방을 준비하는 중</strong>
+          <p>같은 PC에서 localhost relay가 켜져 있으면 여기서 바로 대화처럼 지시하고, 상태 칩과 짧은 답으로 결과를 받습니다.</p>
+        </div>
+      </div>
 
-        <section class="sidebar-card">
-          <div class="sidebar-head">
-            <p class="section-kicker">Quick Menu</p>
-            <h2>빠른 주문</h2>
-          </div>
-          <div class="menu-grid" id="quick-menu">
-            <button type="button" class="menu-chip" data-message="현재 화면과 상태를 확인해서 핵심만 알려줘." data-target="desktop" data-priority="normal">화면 체크</button>
-            <button type="button" class="menu-chip" data-message="현재 브라우저 탭 상태를 점검하고 필요한 작업을 진행해줘." data-target="browser" data-priority="normal">브라우저 작업</button>
-            <button type="button" class="menu-chip" data-message="지금 이 이슈를 요약해서 짧게 보고해줘." data-target="report" data-priority="low">짧은 보고</button>
-            <button type="button" class="menu-chip" data-message="Gemini와 ChatGPT에 상의가 필요하면 먼저 묻고 진행해줘." data-target="llm" data-priority="high">LLM 상의</button>
-            <button type="button" class="menu-chip" data-command='{"mode":"desktop-command","action":"screen-size"}' data-target="desktop" data-priority="normal">screen-size JSON</button>
-            <button type="button" class="menu-chip" data-command='{"mode":"browser-command","action":"dom-summary"}' data-target="browser" data-priority="normal">DOM summary JSON</button>
-          </div>
-        </section>
-
-        <section class="sidebar-card">
-          <div class="sidebar-head">
-            <p class="section-kicker">Queue</p>
-            <h2>대기 중 명령</h2>
-          </div>
-          <div id="queue-list" class="queue-list">
-            <p class="empty-note">불러오는 중...</p>
-          </div>
-        </section>
-
-        <section class="sidebar-card">
-          <div class="sidebar-head">
-            <p class="section-kicker">Channel</p>
-            <h2>연결 정보</h2>
-          </div>
-          <dl class="info-list">
-            <div>
-              <dt>Repository</dt>
-              <dd><a id="repo-link" href="https://github.com/frysquirrel-A/codex-local-agent-tools" target="_blank" rel="noreferrer">frysquirrel-A/codex-local-agent-tools</a></dd>
+      <form id="chat-form" class="composer-shell">
+        <div id="composer-tools" class="composer-tools is-collapsed">
+          <div class="tool-block">
+            <p class="tool-label">대상</p>
+            <div class="chip-row" id="target-chips">
+              <button type="button" class="option-chip is-active" data-target="other">자동</button>
+              <button type="button" class="option-chip" data-target="browser">브라우저</button>
+              <button type="button" class="option-chip" data-target="desktop">바탕화면</button>
+              <button type="button" class="option-chip" data-target="report">보고</button>
             </div>
-            <div>
-              <dt>Command Lane</dt>
-              <dd>GitHub Issue + <code>remote-command</code></dd>
-            </div>
-            <div>
-              <dt>Refresh</dt>
-              <dd>15초 간격 자동 새로고침</dd>
-            </div>
-          </dl>
-          <ul class="rule-list">
-            <li>정적 페이지라서 서버 푸시는 없고 GitHub API를 주기적으로 읽는다.</li>
-            <li>자동 실행은 신뢰된 owner와 구조화된 명령만 대상이다.</li>
-            <li>완료 시에는 긴 로그 대신 핵심 상태와 결과만 보여준다.</li>
-          </ul>
-        </section>
-      </aside>
-
-      <section class="chat-panel">
-        <header class="thread-header">
-          <div>
-            <p class="section-kicker">Conversation</p>
-            <h2>Codex 작업 대화</h2>
-            <p class="thread-copy">오른쪽 아래 입력창에 자연어 지시나 JSON 명령을 넣으면 GitHub Issue로 전송된다.</p>
           </div>
-          <button type="button" id="manual-refresh" class="ghost-button">지금 새로고침</button>
-        </header>
 
-        <div id="command-thread" class="thread">
-          <div class="thread-empty">
-            <strong>대화를 불러오는 중</strong>
-            <p>최근 remote-command issue와 Codex 실행 요약을 읽고 있습니다.</p>
+          <div class="tool-block">
+            <p class="tool-label">우선순위</p>
+            <div class="chip-row" id="priority-chips">
+              <button type="button" class="option-chip is-active" data-priority="normal">보통</button>
+              <button type="button" class="option-chip" data-priority="high">높음</button>
+              <button type="button" class="option-chip" data-priority="urgent">긴급</button>
+            </div>
           </div>
+
+          <label class="json-drawer">
+            <span>구조화 명령 JSON</span>
+            <textarea id="command-json" rows="4" placeholder='{"mode":"desktop-command","action":"screen-size"}'></textarea>
+          </label>
         </div>
 
-        <form id="command-form" class="composer-panel">
-          <div class="composer-topline">
-            <div class="composer-badge">New Command</div>
-            <div class="meta-selects">
-              <label>
-                <span>대상</span>
-                <select id="target" name="target">
-                  <option value="browser">browser</option>
-                  <option value="desktop">desktop</option>
-                  <option value="llm">llm</option>
-                  <option value="report">report</option>
-                  <option value="backup">backup</option>
-                  <option value="other">other</option>
-                </select>
-              </label>
-              <label>
-                <span>우선순위</span>
-                <select id="priority" name="priority">
-                  <option value="normal">normal</option>
-                  <option value="low">low</option>
-                  <option value="high">high</option>
-                  <option value="urgent">urgent</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <label class="message-field">
-            <span>채팅 지시</span>
-            <textarea id="message" name="message" rows="3" placeholder="예: 현재 브라우저와 메일 상태를 보고, 끝나면 핵심만 짧게 알려줘." required></textarea>
+        <div class="composer-main">
+          <button type="button" id="toggle-tools" class="icon-button" aria-label="명령 옵션 열기">+</button>
+          <label class="message-box" for="message">
+            <textarea id="message" rows="1" placeholder="Codex에게 시킬 작업을 채팅처럼 입력하세요." required></textarea>
           </label>
+          <button type="submit" id="send-button" class="send-button">전송</button>
+        </div>
 
-          <details class="advanced-panel">
-            <summary>고급 입력 열기</summary>
-            <div class="advanced-grid">
-              <label>
-                <span>제목</span>
-                <input id="title" name="title" maxlength="120" placeholder="비워두면 메시지 첫 줄로 자동 생성">
-              </label>
-              <label class="wide">
-                <span>Command JSON</span>
-                <textarea id="command" name="command" rows="5" placeholder='{"mode":"desktop-command","action":"screen-size"}'></textarea>
-              </label>
-              <label class="wide">
-                <span>추가 메모</span>
-                <textarea id="notes" name="notes" rows="3" placeholder="마감, 제약 조건, 참고 링크, 원하는 결과 형식"></textarea>
-              </label>
-            </div>
-          </details>
-
-          <div class="composer-actions">
-            <button type="submit" class="primary-button">GitHub Issue로 보내기</button>
-            <button type="button" id="copy-body" class="secondary-button">본문 복사</button>
-          </div>
-        </form>
-      </section>
+        <div class="composer-foot">
+          <span id="composer-hint">relay가 켜져 있으면 GitHub 이슈 화면으로 튕기지 않고 여기서 바로 전송됩니다.</span>
+        </div>
+      </form>
     </section>
   </main>
 

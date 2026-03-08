@@ -1,16 +1,47 @@
 const REPO_OWNER = "frysquirrel-A";
 const REPO_NAME = "codex-local-agent-tools";
-const ISSUE_TEMPLATE = "remote-command.md";
 const ISSUE_LABEL = "remote-command";
 const TITLE_PREFIX = "[remote]";
-const RECENT_LIMIT = 14;
-const POLL_INTERVAL_MS = 15000;
-const THREAD_LIMIT = 10;
+const RELAY_BASES = ["http://127.0.0.1:8767", "http://localhost:8767"];
+const RELAY_POLL_MS = 2500;
+const FALLBACK_POLL_MS = 15000;
+const SESSION_KEY = "codex-chat-session-id";
+const THREAD_LIMIT = 14;
 
-let loading = false;
+const state = {
+  relayBase: null,
+  relayConnected: false,
+  relayEntries: [],
+  fallbackEntries: [],
+  loading: false,
+  sending: false,
+  sessionId: getOrCreateSessionId(),
+  selectedTarget: "other",
+  selectedPriority: "normal",
+  toolsOpen: false,
+  pollHandle: null,
+  fallbackHandle: null
+};
 
-function normalizeText(value) {
-  return (value || "").replace(/\s+/g, " ").trim();
+function getOrCreateSessionId() {
+  const existing = window.localStorage.getItem(SESSION_KEY);
+  if (existing) {
+    return existing;
+  }
+
+  const created = typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `sid-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  window.localStorage.setItem(SESSION_KEY, created);
+  return created;
+}
+
+function resetSessionId() {
+  const created = typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `sid-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  window.localStorage.setItem(SESSION_KEY, created);
+  state.sessionId = created;
 }
 
 function escapeHtml(value) {
@@ -22,6 +53,10 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function normalizeText(value) {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+
 function parseSection(body, heading) {
   if (!body) {
     return "";
@@ -30,14 +65,6 @@ function parseSection(body, heading) {
   const pattern = new RegExp(`###\\s+${heading}\\s*\\n([\\s\\S]*?)(?=\\n###\\s+|$)`, "m");
   const match = body.match(pattern);
   return match ? match[1].trim() : "";
-}
-
-function deriveTitle(text) {
-  const compact = normalizeText(text);
-  if (!compact) {
-    return "remote command";
-  }
-  return compact.length > 52 ? `${compact.slice(0, 52)}...` : compact;
 }
 
 function parseMaybeJson(command) {
@@ -51,12 +78,12 @@ function parseMaybeJson(command) {
 function summarizeCommand(command, target) {
   const normalized = normalizeText(command);
   if (!normalized) {
-    return "명령 내용 없음";
+    return "내용 없음";
   }
 
   const parsed = parseMaybeJson(normalized);
   if (!parsed || typeof parsed !== "object") {
-    return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
+    return normalized;
   }
 
   const parts = [];
@@ -69,114 +96,17 @@ function summarizeCommand(command, target) {
   if (parsed.provider) {
     parts.push(parsed.provider);
   }
-  if (!parts.length && target) {
-    parts.push(target);
-  }
   if (parsed.url) {
     parts.push(parsed.url);
+  }
+  if (!parts.length && target) {
+    parts.push(target);
   }
   if (parsed.text) {
     parts.push(normalizeText(parsed.text).slice(0, 80));
   }
 
-  const summary = normalizeText(parts.join(" · "));
-  return summary || normalized;
-}
-
-function formatIssueNotes(message, notes, hasStructuredCommand) {
-  const pieces = [];
-  const compactMessage = normalizeText(message);
-  const compactNotes = normalizeText(notes);
-
-  if (hasStructuredCommand && compactMessage) {
-    pieces.push(`Message: ${compactMessage}`);
-  }
-  if (compactNotes) {
-    pieces.push(compactNotes);
-  }
-
-  return pieces.length ? pieces.join("\n\n") : "-";
-}
-
-function buildIssuePayload() {
-  const message = document.getElementById("message").value.trim();
-  const rawCommand = document.getElementById("command").value.trim();
-  const notes = document.getElementById("notes").value.trim();
-  const command = rawCommand || message;
-  const titleInput = document.getElementById("title").value.trim();
-  const title = titleInput || deriveTitle(message || rawCommand);
-
-  return {
-    title,
-    priority: document.getElementById("priority").value,
-    target: document.getElementById("target").value,
-    message,
-    command,
-    notes: formatIssueNotes(message, notes, Boolean(rawCommand))
-  };
-}
-
-function buildIssueBody(payload) {
-  return [
-    "## Remote Command",
-    "",
-    "### Command",
-    payload.command || "",
-    "",
-    "### Priority",
-    payload.priority || "normal",
-    "",
-    "### Target",
-    payload.target || "other",
-    "",
-    "### Notes",
-    payload.notes || "-",
-    "",
-    "### Requested At",
-    new Date().toLocaleString("ko-KR")
-  ].join("\n");
-}
-
-function buildIssueUrl(payload) {
-  const url = new URL(`https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`);
-  url.searchParams.set("template", ISSUE_TEMPLATE);
-  url.searchParams.set("title", `${TITLE_PREFIX} ${payload.title}`);
-  url.searchParams.set("labels", ISSUE_LABEL);
-  url.searchParams.set("body", buildIssueBody(payload));
-  return url.toString();
-}
-
-function issueMatches(issue) {
-  const labels = Array.isArray(issue.labels) ? issue.labels.map((item) => item.name) : [];
-  return labels.includes(ISSUE_LABEL) || (issue.title || "").startsWith(TITLE_PREFIX);
-}
-
-function timeLabel(value) {
-  if (!value) {
-    return "";
-  }
-  return new Date(value).toLocaleString("ko-KR");
-}
-
-function relativeTime(value) {
-  if (!value) {
-    return "";
-  }
-
-  const delta = Date.now() - new Date(value).getTime();
-  const minutes = Math.floor(delta / 60000);
-  if (minutes < 1) {
-    return "방금 전";
-  }
-  if (minutes < 60) {
-    return `${minutes}분 전`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}시간 전`;
-  }
-  const days = Math.floor(hours / 24);
-  return `${days}일 전`;
+  return normalizeText(parts.join(" · ")) || normalized;
 }
 
 function parseExecutorComment(body) {
@@ -202,19 +132,86 @@ function parseExecutorComment(body) {
   const finalLine = paragraphs.length ? paragraphs[paragraphs.length - 1] : "";
 
   return {
-    status,
-    mode: details.mode || "",
-    action: details.action || "",
-    timestamp: details.timestamp || "",
-    summary: finalLine || (status === "success" ? "실행이 완료되었습니다." : "실행 상태가 업데이트되었습니다.")
+    status: status || "update",
+    title: normalizeText([details.mode || "", details.action || ""].filter(Boolean).join(" · ")) || "Codex 응답",
+    text: finalLine || "작업 상태가 업데이트되었습니다.",
+    createdAt: details.timestamp || ""
   };
 }
 
-function extractLatestComment(comments) {
-  if (!Array.isArray(comments) || comments.length === 0) {
-    return null;
+function timeLabel(value) {
+  if (!value) {
+    return "";
   }
-  return comments[comments.length - 1];
+  return new Date(value).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function dayLabel(value) {
+  if (!value) {
+    return "";
+  }
+  return new Date(value).toLocaleDateString("ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "short"
+  });
+}
+
+function issueMatches(issue) {
+  const labels = Array.isArray(issue.labels) ? issue.labels.map((item) => item.name) : [];
+  return labels.includes(ISSUE_LABEL) || (issue.title || "").startsWith(TITLE_PREFIX);
+}
+
+function createFallbackStatus(issue, queueStateText) {
+  return {
+    id: `fallback-status-${issue.number}`,
+    kind: "status",
+    tone: queueStateText === "failed" ? "error" : "queued",
+    text: queueStateText === "failed" ? "작업이 실패했지만 자세한 답변은 아직 없습니다." : "Codex가 확인 중",
+    createdAt: issue.updated_at,
+    issueNumber: issue.number
+  };
+}
+
+function buildFallbackTranscript(issues, commentsByIssue) {
+  const entries = [];
+
+  issues.forEach((issue) => {
+    const command = parseSection(issue.body, "Command");
+    const target = parseSection(issue.body, "Target") || "other";
+    entries.push({
+      id: `fallback-user-${issue.number}`,
+      kind: "message",
+      role: "user",
+      text: summarizeCommand(command, target),
+      createdAt: issue.created_at,
+      issueNumber: issue.number
+    });
+
+    const latestComment = commentsByIssue.get(issue.number);
+    const executor = parseExecutorComment(latestComment?.body || "");
+    if (executor) {
+      entries.push({
+        id: `fallback-assistant-${issue.number}`,
+        kind: "message",
+        role: "assistant",
+        tone: executor.status === "success" ? "done" : "review",
+        title: executor.title,
+        text: executor.text,
+        createdAt: executor.createdAt || latestComment.created_at || issue.updated_at,
+        issueNumber: issue.number
+      });
+    } else {
+      entries.push(createFallbackStatus(issue, issue.state === "closed" ? "done" : "queued"));
+    }
+  });
+
+  return entries.sort((left, right) => {
+    if (left.createdAt === right.createdAt) {
+      return left.id.localeCompare(right.id);
+    }
+    return left.createdAt.localeCompare(right.createdAt);
+  });
 }
 
 async function fetchLatestComments(issues) {
@@ -223,12 +220,10 @@ async function fetchLatestComments(issues) {
     targets.map(async (issue) => {
       try {
         const response = await fetch(issue.comments_url, {
-          headers: {
-            Accept: "application/vnd.github+json"
-          }
+          headers: { Accept: "application/vnd.github+json" }
         });
         const comments = await response.json();
-        return [issue.number, extractLatestComment(comments)];
+        return [issue.number, comments[comments.length - 1] || null];
       } catch {
         return [issue.number, null];
       }
@@ -238,228 +233,330 @@ async function fetchLatestComments(issues) {
   return new Map(entries);
 }
 
-function buildIssueView(issue, latestComment) {
-  const command = parseSection(issue.body, "Command");
-  const priority = parseSection(issue.body, "Priority") || "normal";
-  const target = parseSection(issue.body, "Target") || "other";
-  const notes = parseSection(issue.body, "Notes");
-  const executorSummary = parseExecutorComment(latestComment?.body || "");
-  const commandSummary = summarizeCommand(command, target);
-
-  const assistant = (() => {
-    if (executorSummary) {
-      return {
-        tone: executorSummary.status === "success" ? "success" : "alert",
-        state: executorSummary.status === "success" ? "완료" : "업데이트",
-        title: normalizeText([executorSummary.mode, executorSummary.action].filter(Boolean).join(" · ")) || "Codex 실행 결과",
-        body: executorSummary.summary,
-        timestamp: executorSummary.timestamp || latestComment.created_at || issue.updated_at
-      };
+async function discoverRelay() {
+  for (const base of RELAY_BASES) {
+    try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 1200);
+      const response = await fetch(`${base}/status`, {
+        method: "GET",
+        mode: "cors",
+        cache: "no-store",
+        credentials: "omit",
+        signal: controller.signal
+      });
+      window.clearTimeout(timeout);
+      if (!response.ok) {
+        continue;
+      }
+      const payload = await response.json();
+      if (payload.ok) {
+        state.relayBase = base;
+        state.relayConnected = true;
+        return true;
+      }
+    } catch {
     }
+  }
 
-    if (issue.state === "closed") {
-      return {
-        tone: "success",
-        state: "완료",
-        title: "작업 종료",
-        body: issue.state_reason === "completed" ? "작업이 완료되어 닫혔습니다." : "이슈가 닫혔습니다.",
-        timestamp: issue.closed_at || issue.updated_at
-      };
-    }
-
-    return {
-      tone: "pending",
-      state: "대기",
-      title: "Codex가 확인 중",
-      body: "접수된 명령입니다. 실행이 끝나면 핵심 결과만 짧게 올립니다.",
-      timestamp: issue.updated_at
-    };
-  })();
-
-  return {
-    issue,
-    command,
-    commandSummary,
-    priority,
-    target,
-    notes,
-    assistant
-  };
+  state.relayBase = null;
+  state.relayConnected = false;
+  return false;
 }
 
-function bubbleMeta(parts) {
-  return parts.filter(Boolean).map((part) => `<span>${escapeHtml(part)}</span>`).join("");
-}
-
-function renderThreadBubble(view) {
-  const userMeta = bubbleMeta([
-    `#${view.issue.number}`,
-    view.priority,
-    view.target,
-    relativeTime(view.issue.created_at)
-  ]);
-  const assistantMeta = bubbleMeta([
-    view.assistant.state,
-    relativeTime(view.assistant.timestamp),
-    view.assistant.timestamp ? timeLabel(view.assistant.timestamp) : ""
-  ]);
-  const noteLine = normalizeText(view.notes && view.notes !== "-" ? view.notes : "");
-
-  return `
-    <article class="chat-row is-user">
-      <div class="avatar avatar-user">You</div>
-      <div class="bubble bubble-user">
-        <div class="bubble-label">사용자 명령</div>
-        <h3 class="bubble-title">${escapeHtml(view.issue.title.replace(TITLE_PREFIX, "").trim() || "remote command")}</h3>
-        <p class="bubble-body">${escapeHtml(view.commandSummary)}</p>
-        ${noteLine ? `<p class="bubble-note">${escapeHtml(noteLine)}</p>` : ""}
-        <div class="bubble-meta">${userMeta}</div>
-      </div>
-    </article>
-    <article class="chat-row is-bot">
-      <div class="avatar avatar-bot">CX</div>
-      <div class="bubble bubble-bot bubble-${escapeHtml(view.assistant.tone)}">
-        <div class="bubble-label">Codex 요약</div>
-        <h3 class="bubble-title">${escapeHtml(view.assistant.title)}</h3>
-        <p class="bubble-body">${escapeHtml(view.assistant.body)}</p>
-        <div class="bubble-meta">${assistantMeta}</div>
-      </div>
-    </article>
-  `;
-}
-
-function renderQueueItem(view) {
-  return `
-    <article class="queue-item">
-      <div class="queue-topline">
-        <strong>#${view.issue.number}</strong>
-        <span class="queue-priority priority-${escapeHtml(view.priority)}">${escapeHtml(view.priority)}</span>
-      </div>
-      <p>${escapeHtml(view.commandSummary)}</p>
-      <small>${escapeHtml(view.target)} · ${escapeHtml(relativeTime(view.issue.created_at))}</small>
-    </article>
-  `;
-}
-
-function renderEmptyState(title, body) {
-  return `
-    <div class="thread-empty">
-      <strong>${escapeHtml(title)}</strong>
-      <p>${escapeHtml(body)}</p>
-    </div>
-  `;
-}
-
-function updateStats(views) {
-  const total = views.length;
-  const open = views.filter((item) => item.issue.state === "open").length;
-  const done = views.filter((item) => item.issue.state === "closed").length;
-  const urgent = views.filter((item) => item.priority === "urgent").length;
-
-  document.getElementById("stat-total").textContent = String(total);
-  document.getElementById("stat-open").textContent = String(open);
-  document.getElementById("stat-done").textContent = String(done);
-  document.getElementById("stat-urgent").textContent = String(urgent);
-}
-
-function updateSyncState(text) {
-  document.getElementById("sync-state").textContent = text;
-  document.getElementById("last-sync").textContent = relativeTime(new Date().toISOString()) || "방금 전";
-}
-
-function renderViews(views) {
-  const threadRoot = document.getElementById("command-thread");
-  const queueRoot = document.getElementById("queue-list");
-  const threadViews = [...views].slice(0, THREAD_LIMIT).reverse();
-  const queueViews = views.filter((item) => item.issue.state === "open").slice(0, 6);
-
-  threadRoot.innerHTML = threadViews.length
-    ? threadViews.map(renderThreadBubble).join("")
-    : renderEmptyState("대화 없음", "아직 remote-command issue가 없습니다.");
-
-  queueRoot.innerHTML = queueViews.length
-    ? queueViews.map(renderQueueItem).join("")
-    : '<p class="empty-note">현재 대기 중인 명령이 없습니다.</p>';
-}
-
-async function loadIssues() {
-  if (loading) {
+async function loadRelaySession() {
+  if (!state.relayBase || state.loading) {
     return;
   }
 
-  loading = true;
-  updateSyncState("GitHub와 동기화 중");
+  state.loading = true;
+  try {
+    const response = await fetch(`${state.relayBase}/api/session?sessionId=${encodeURIComponent(state.sessionId)}`, {
+      mode: "cors",
+      cache: "no-store",
+      credentials: "omit"
+    });
+    if (!response.ok) {
+      throw new Error("relay session fetch failed");
+    }
 
+    const payload = await response.json();
+    state.relayEntries = Array.isArray(payload.entries) ? payload.entries : [];
+    renderThread();
+    setConnectionState("live");
+  } catch {
+    state.relayConnected = false;
+    setConnectionState("fallback");
+    await loadFallbackTranscript();
+  } finally {
+    state.loading = false;
+  }
+}
+
+async function loadFallbackTranscript() {
   try {
     const response = await fetch(
-      `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=all&sort=updated&direction=desc&per_page=${RECENT_LIMIT}`,
+      `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=all&sort=updated&direction=desc&per_page=${THREAD_LIMIT}`,
       {
-        headers: {
-          Accept: "application/vnd.github+json"
-        }
+        headers: { Accept: "application/vnd.github+json" }
       }
     );
     const issues = await response.json();
-    const filtered = Array.isArray(issues) ? issues.filter(issueMatches) : [];
+    const filtered = Array.isArray(issues) ? issues.filter(issueMatches).slice(0, THREAD_LIMIT).reverse() : [];
     const commentsByIssue = await fetchLatestComments(filtered);
-    const views = filtered.map((issue) => buildIssueView(issue, commentsByIssue.get(issue.number)));
-
-    renderViews(views);
-    updateStats(views);
-    updateSyncState("GitHub와 동기화됨");
-  } catch (error) {
-    document.getElementById("command-thread").innerHTML = renderEmptyState(
-      "불러오지 못함",
-      "GitHub issue 또는 comment를 읽지 못했습니다. 잠시 후 다시 시도해 주세요."
-    );
-    document.getElementById("queue-list").innerHTML = '<p class="empty-note">큐를 읽지 못했습니다.</p>';
-    updateSyncState("동기화 실패");
-  } finally {
-    loading = false;
+    state.fallbackEntries = buildFallbackTranscript(filtered, commentsByIssue);
+  } catch {
+    state.fallbackEntries = [];
   }
+
+  renderThread();
 }
 
-function applyQuickMenu(button) {
-  const message = button.dataset.message || "";
-  const command = button.dataset.command || "";
-  const target = button.dataset.target || "other";
-  const priority = button.dataset.priority || "normal";
+function setConnectionState(mode) {
+  const chip = document.getElementById("connection-chip");
+  const copy = document.getElementById("connection-copy");
+  const hint = document.getElementById("composer-hint");
+  const sendButton = document.getElementById("send-button");
 
-  if (message) {
-    document.getElementById("message").value = message;
-  }
-  if (command) {
-    document.getElementById("command").value = command;
-  }
-  document.getElementById("target").value = target;
-  document.getElementById("priority").value = priority;
-}
+  chip.className = "connection-chip";
 
-document.getElementById("quick-menu").addEventListener("click", (event) => {
-  const button = event.target.closest(".menu-chip");
-  if (!button) {
+  if (mode === "live") {
+    chip.classList.add("is-live");
+    chip.textContent = "같은 PC 실시간 연결";
+    copy.textContent = "localhost relay가 연결되어 이 채팅방에서 바로 명령을 보냅니다.";
+    hint.textContent = "전송하면 이 채팅방에 바로 올라가고, Codex 상태 칩과 짧은 답으로 돌아옵니다.";
+    sendButton.disabled = false;
     return;
   }
-  applyQuickMenu(button);
-});
 
-document.getElementById("command-form").addEventListener("submit", (event) => {
+  if (mode === "sending") {
+    chip.classList.add("is-working");
+    chip.textContent = "보내는 중";
+    copy.textContent = "메시지를 로컬 relay로 전달하는 중";
+    hint.textContent = "전송 중입니다. 잠시만 기다리세요.";
+    sendButton.disabled = true;
+    return;
+  }
+
+  chip.classList.add("is-fallback");
+  chip.textContent = "읽기 전용 fallback";
+  copy.textContent = "localhost relay가 없어서 공개 GitHub 로그만 읽는 상태입니다.";
+  hint.textContent = "이 PC에서 relay가 켜져 있어야 진짜 채팅처럼 바로 전송됩니다.";
+  sendButton.disabled = true;
+}
+
+function renderEntry(entry) {
+  if (entry.kind === "status") {
+    return `
+      <div class="status-lane">
+        <div class="status-chip tone-${escapeHtml(entry.tone || "queued")}">
+          <span class="status-dot"></span>
+          <span>${escapeHtml(entry.text)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  const isUser = entry.role === "user";
+  const tone = entry.tone || "done";
+  const meta = timeLabel(entry.createdAt);
+  const title = entry.title ? `<p class="message-title">${escapeHtml(entry.title)}</p>` : "";
+
+  return `
+    <article class="msg-row ${isUser ? "is-user" : "is-assistant"}">
+      <div class="msg-avatar ${isUser ? "avatar-user" : "avatar-assistant"}">${isUser ? "나" : "CX"}</div>
+      <div class="msg-stack">
+        <div class="msg-bubble ${isUser ? "bubble-user" : `bubble-assistant tone-${escapeHtml(tone)}`}">
+          ${title}
+          <p class="msg-text">${escapeHtml(entry.text).replace(/\n/g, "<br>")}</p>
+        </div>
+        <p class="msg-meta">${escapeHtml(meta)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function renderThread() {
+  const thread = document.getElementById("room-thread");
+  const entries = state.relayConnected ? state.relayEntries : state.fallbackEntries;
+
+  if (!entries.length) {
+    thread.innerHTML = `
+      <div class="welcome-card">
+        <p class="welcome-kicker">${state.relayConnected ? "Live Chat" : "Read Only"}</p>
+        <strong>${state.relayConnected ? "여기서 바로 Codex에게 말하면 됩니다." : "relay가 없어서 아직 채팅방이 비어 있습니다."}</strong>
+        <p>${state.relayConnected ? "아래 입력창에 작업을 채팅처럼 보내면 이 대화방 안에서 상태와 결과를 받습니다." : "같은 PC에서 local chat relay가 켜지면 이 페이지가 진짜 채팅방처럼 동작합니다."}</p>
+      </div>
+    `;
+    return;
+  }
+
+  let previousDay = "";
+  const parts = [];
+
+  if (!state.relayConnected) {
+    parts.push(`
+      <div class="status-lane">
+        <div class="status-chip tone-review">
+          <span class="status-dot"></span>
+          <span>relay가 없어 공개 GitHub 로그를 읽는 중입니다.</span>
+        </div>
+      </div>
+    `);
+  }
+
+  entries.forEach((entry) => {
+    const currentDay = dayLabel(entry.createdAt);
+    if (currentDay && currentDay !== previousDay) {
+      parts.push(`<div class="day-divider"><span>${escapeHtml(currentDay)}</span></div>`);
+      previousDay = currentDay;
+    }
+    parts.push(renderEntry(entry));
+  });
+
+  thread.innerHTML = parts.join("");
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function selectChip(containerId, attributeName, selectedValue) {
+  document.querySelectorAll(`#${containerId} .option-chip`).forEach((button) => {
+    button.classList.toggle("is-active", button.dataset[attributeName] === selectedValue);
+  });
+}
+
+function autoResizeTextarea() {
+  const textarea = document.getElementById("message");
+  textarea.style.height = "0px";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+}
+
+function toggleTools(forceOpen) {
+  state.toolsOpen = typeof forceOpen === "boolean" ? forceOpen : !state.toolsOpen;
+  document.getElementById("composer-tools").classList.toggle("is-collapsed", !state.toolsOpen);
+  document.getElementById("toggle-tools").classList.toggle("is-open", state.toolsOpen);
+}
+
+async function sendMessage(event) {
   event.preventDefault();
-  const payload = buildIssuePayload();
-  if (!payload.title || !payload.command) {
+
+  const message = document.getElementById("message").value.trim();
+  const command = document.getElementById("command-json").value.trim();
+  if (!message && !command) {
     return;
   }
-  window.open(buildIssueUrl(payload), "_blank", "noopener,noreferrer");
-});
 
-document.getElementById("copy-body").addEventListener("click", async () => {
-  const payload = buildIssuePayload();
-  await navigator.clipboard.writeText(buildIssueBody(payload));
-});
+  if (!state.relayConnected || !state.relayBase) {
+    setConnectionState("fallback");
+    renderThread();
+    return;
+  }
 
-document.getElementById("manual-refresh").addEventListener("click", () => {
-  loadIssues();
-});
+  state.sending = true;
+  setConnectionState("sending");
 
-loadIssues();
-window.setInterval(loadIssues, POLL_INTERVAL_MS);
+  try {
+    const response = await fetch(`${state.relayBase}/api/message`, {
+      method: "POST",
+      mode: "cors",
+      cache: "no-store",
+      credentials: "omit",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: state.sessionId,
+        text: message,
+        command,
+        target: state.selectedTarget,
+        priority: state.selectedPriority
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("message submit failed");
+    }
+
+    document.getElementById("message").value = "";
+    document.getElementById("command-json").value = "";
+    autoResizeTextarea();
+    toggleTools(false);
+    await loadRelaySession();
+  } catch {
+    state.relayConnected = false;
+    await loadFallbackTranscript();
+  } finally {
+    state.sending = false;
+    setConnectionState(state.relayConnected ? "live" : "fallback");
+  }
+}
+
+async function bootstrap() {
+  document.getElementById("chat-form").addEventListener("submit", sendMessage);
+  document.getElementById("message").addEventListener("input", autoResizeTextarea);
+  document.getElementById("message").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      document.getElementById("chat-form").requestSubmit();
+    }
+  });
+
+  document.getElementById("toggle-tools").addEventListener("click", () => {
+    toggleTools();
+  });
+
+  document.getElementById("new-session").addEventListener("click", async () => {
+    resetSessionId();
+    state.relayEntries = [];
+    state.fallbackEntries = [];
+    renderThread();
+    if (state.relayConnected) {
+      await loadRelaySession();
+    }
+  });
+
+  document.getElementById("target-chips").addEventListener("click", (event) => {
+    const chip = event.target.closest(".option-chip");
+    if (!chip) {
+      return;
+    }
+    state.selectedTarget = chip.dataset.target || "other";
+    selectChip("target-chips", "target", state.selectedTarget);
+  });
+
+  document.getElementById("priority-chips").addEventListener("click", (event) => {
+    const chip = event.target.closest(".option-chip");
+    if (!chip) {
+      return;
+    }
+    state.selectedPriority = chip.dataset.priority || "normal";
+    selectChip("priority-chips", "priority", state.selectedPriority);
+  });
+
+  autoResizeTextarea();
+
+  const relayReady = await discoverRelay();
+  if (relayReady) {
+    setConnectionState("live");
+    await loadRelaySession();
+    state.pollHandle = window.setInterval(loadRelaySession, RELAY_POLL_MS);
+    return;
+  }
+
+  setConnectionState("fallback");
+  await loadFallbackTranscript();
+  state.fallbackHandle = window.setInterval(async () => {
+    const relayNow = await discoverRelay();
+    if (relayNow) {
+      if (state.fallbackHandle) {
+        window.clearInterval(state.fallbackHandle);
+      }
+      setConnectionState("live");
+      await loadRelaySession();
+      state.pollHandle = window.setInterval(loadRelaySession, RELAY_POLL_MS);
+      return;
+    }
+    await loadFallbackTranscript();
+  }, FALLBACK_POLL_MS);
+}
+
+bootstrap();
