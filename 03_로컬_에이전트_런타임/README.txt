@@ -31,4 +31,4 @@ Notes:
 - Continuous-improvement rules live in `config\continuous_improvement_policy.json`.
 - Research notes comparing external agent projects live in `research_notes.md`.
 - Remote command channel config lives in `config\remote_command_channel.json`.
-- Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, and `scripts\stop_remote_command_poller.ps1`.
+- Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, `scripts\stop_remote_command_poller.ps1`, `scripts\get_remote_command_queue.ps1`, and `scripts\mark_remote_command_processed.ps1`.

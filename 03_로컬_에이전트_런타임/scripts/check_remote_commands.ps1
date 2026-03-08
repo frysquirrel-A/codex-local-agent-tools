@@ -22,6 +22,86 @@ $headers = @{
     "Accept" = "application/vnd.github+json"
 }
 
+function Get-SectionValue {
+    param(
+        [string]$Text,
+        [string]$Heading
+    )
+
+    $pattern = "(?ms)^###\s+" + [regex]::Escape($Heading) + "\s*\r?\n(?<value>.*?)(?=^###\s+|\z)"
+    $match = [regex]::Match($Text, $pattern)
+    if (-not $match.Success) {
+        return ""
+    }
+
+    return $match.Groups["value"].Value.Trim()
+}
+
+function Convert-IssueToQueueRecord {
+    param(
+        [object]$Issue,
+        [string]$MatchedBy
+    )
+
+    $body = [string]$Issue.body
+    $command = Get-SectionValue -Text $body -Heading "Command"
+    $priority = Get-SectionValue -Text $body -Heading "Priority"
+    $target = Get-SectionValue -Text $body -Heading "Target"
+    $notes = Get-SectionValue -Text $body -Heading "Notes"
+    $requestedAt = Get-SectionValue -Text $body -Heading "Requested At"
+
+    return [pscustomobject]@{
+        number = [int]$Issue.number
+        title = [string]$Issue.title
+        url = [string]$Issue.html_url
+        user = [string]$Issue.user.login
+        createdAt = [string]$Issue.created_at
+        body = $body
+        state = [string]$Issue.state
+        matchedBy = $MatchedBy
+        command = $command
+        priority = if ([string]::IsNullOrWhiteSpace($priority)) { "normal" } else { $priority }
+        target = if ([string]::IsNullOrWhiteSpace($target)) { "other" } else { $target }
+        notes = $notes
+        requestedAt = $requestedAt
+        status = "new"
+        queuedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        processedAt = $null
+        result = $null
+    }
+}
+
+function Normalize-QueueItem {
+    param([object]$Item)
+
+    $body = [string]$Item.body
+    $command = if ($Item.PSObject.Properties.Name -contains "command") { [string]$Item.command } else { Get-SectionValue -Text $body -Heading "Command" }
+    $priority = if ($Item.PSObject.Properties.Name -contains "priority") { [string]$Item.priority } else { Get-SectionValue -Text $body -Heading "Priority" }
+    $target = if ($Item.PSObject.Properties.Name -contains "target") { [string]$Item.target } else { Get-SectionValue -Text $body -Heading "Target" }
+    $notes = if ($Item.PSObject.Properties.Name -contains "notes") { [string]$Item.notes } else { Get-SectionValue -Text $body -Heading "Notes" }
+    $requestedAt = if ($Item.PSObject.Properties.Name -contains "requestedAt") { [string]$Item.requestedAt } else { Get-SectionValue -Text $body -Heading "Requested At" }
+
+    return [pscustomobject]@{
+        number = [int]$Item.number
+        title = [string]$Item.title
+        url = [string]$Item.url
+        user = [string]$Item.user
+        createdAt = [string]$Item.createdAt
+        body = $body
+        state = [string]$Item.state
+        matchedBy = if ($Item.PSObject.Properties.Name -contains "matchedBy") { [string]$Item.matchedBy } else { "legacy" }
+        command = $command
+        priority = if ([string]::IsNullOrWhiteSpace($priority)) { "normal" } else { $priority }
+        target = if ([string]::IsNullOrWhiteSpace($target)) { "other" } else { $target }
+        notes = $notes
+        requestedAt = $requestedAt
+        status = if ($Item.PSObject.Properties.Name -contains "status" -and -not [string]::IsNullOrWhiteSpace([string]$Item.status)) { [string]$Item.status } else { "new" }
+        queuedAt = if ($Item.PSObject.Properties.Name -contains "queuedAt") { [string]$Item.queuedAt } else { (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
+        processedAt = if ($Item.PSObject.Properties.Name -contains "processedAt") { [string]$Item.processedAt } else { $null }
+        result = if ($Item.PSObject.Properties.Name -contains "result") { [string]$Item.result } else { $null }
+    }
+}
+
 if (Test-Path -LiteralPath $statePath) {
     $state = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
 } else {
@@ -32,9 +112,15 @@ if (Test-Path -LiteralPath $statePath) {
 }
 
 if (Test-Path -LiteralPath $queuePath) {
-    $queue = @(Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json)
+    $rawQueue = @(Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json)
+    $queue = @($rawQueue | ForEach-Object { Normalize-QueueItem -Item $_ })
 } else {
     $queue = @()
+}
+
+$existingNumbers = @{}
+foreach ($item in $queue) {
+    $existingNumbers[[int]$item.number] = $true
 }
 
 $uri = "{0}/repos/{1}/{2}/issues?state=open&sort=created&direction=asc&per_page=30" -f $config.apiBase, $config.owner, $config.repo
@@ -58,17 +144,18 @@ foreach ($issue in $issues) {
         continue
     }
 
-    $record = [ordered]@{
-        number = $number
-        title = [string]$issue.title
-        url = [string]$issue.html_url
-        user = [string]$issue.user.login
-        createdAt = [string]$issue.created_at
-        body = [string]$issue.body
-        state = [string]$issue.state
+    if ($existingNumbers.ContainsKey($number)) {
+        if ($number -gt $lastSeen) {
+            $lastSeen = $number
+        }
+        continue
     }
-    $newItems += [pscustomobject]$record
-    $queue += [pscustomobject]$record
+
+    $matchedBy = if ($labelMatch) { "label" } elseif ($titleMatch) { "titlePrefix" } else { "unknown" }
+    $record = Convert-IssueToQueueRecord -Issue $issue -MatchedBy $matchedBy
+    $newItems += $record
+    $queue += $record
+    $existingNumbers[$number] = $true
     if ($number -gt $lastSeen) {
         $lastSeen = $number
     }
@@ -94,6 +181,7 @@ if ($ShowPopup -and $newItems.Count -gt 0) {
     ok = $true
     checkedAt = $state.lastCheckedAt
     queueCount = @($queue).Count
+    pendingCount = @($queue | Where-Object { $_.status -in @("new", "pending") }).Count
     newCount = @($newItems).Count
     lastSeenIssueNumber = $state.lastSeenIssueNumber
     siteUrl = [string]$config.siteUrl
