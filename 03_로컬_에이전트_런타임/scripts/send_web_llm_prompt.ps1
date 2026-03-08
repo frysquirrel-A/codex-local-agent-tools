@@ -67,7 +67,7 @@ function Test-BridgeClientResponsive {
     param([string]$ClientId)
 
     try {
-        $raw = & $bridgeWrapper "ping" "--client-id" $ClientId "--timeout" "4" 2>$null
+        $raw = & $bridgeWrapper "ping" "--client-id" $ClientId "--timeout" "2" 2>$null
         if ($LASTEXITCODE -ne 0) {
             return $false
         }

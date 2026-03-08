@@ -95,7 +95,7 @@ function Test-BridgeClientResponsive {
     param([string]$ClientId)
 
     try {
-        $raw = & $bridgeWrapper "ping" "--client-id" $ClientId "--timeout" "4" 2>$null
+        $raw = & $bridgeWrapper "ping" "--client-id" $ClientId "--timeout" "2" 2>$null
         if ($LASTEXITCODE -ne 0) {
             return $false
         }
@@ -143,6 +143,37 @@ function Get-ProviderUrlHint {
         return "gemini.google.com"
     }
     return "chatgpt.com"
+}
+
+function Get-ProviderHealth {
+    param([string]$Name)
+
+    $urlHint = Get-ProviderUrlHint -Name $Name
+    $status = Get-BridgeStatus
+    $matched = @($status.clients | Where-Object { [string]$_.url -like "*$urlHint*" })
+    $responsive = @()
+
+    foreach ($candidate in $matched) {
+        if (Test-BridgeClientResponsive -ClientId ([string]$candidate.clientId)) {
+            $responsive += $candidate
+        }
+    }
+
+    $preferred = $null
+    if ($responsive.Count -gt 0) {
+        $preferred = $responsive |
+            Sort-Object @{ Expression = { if ($_.active) { 0 } else { 1 } } }, @{ Expression = { if ($_.focused) { 0 } else { 1 } } }, @{ Expression = { -1 * [double]$_.timestamp } } |
+            Select-Object -First 1
+    }
+
+    return [ordered]@{
+        provider = $Name
+        ok = ($responsive.Count -gt 0)
+        matchedClients = $matched.Count
+        responsiveClients = $responsive.Count
+        preferredClientId = if ($preferred) { [string]$preferred.clientId } else { $null }
+        preferredUrl = if ($preferred) { [string]$preferred.url } else { $null }
+    }
 }
 
 function Open-ProviderNewChat {
@@ -275,8 +306,13 @@ switch ($Mode) {
     "status" {
         $bridgeOk = Test-BridgeReady
         $bridgeStatus = $null
+        $providerHealth = $null
         if ($bridgeOk) {
             $bridgeStatus = Get-BridgeStatus
+            $providerHealth = [ordered]@{
+                gemini = Get-ProviderHealth -Name "gemini"
+                chatgpt = Get-ProviderHealth -Name "chatgpt"
+            }
         }
 
         $watchInfo = [ordered]@{
@@ -295,6 +331,7 @@ switch ($Mode) {
             bridge = [ordered]@{
                 ready = $bridgeOk
                 status = $bridgeStatus
+                providerHealth = $providerHealth
             }
             screenWatch = $watchInfo
         } | ConvertTo-Json -Depth 8

@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -31,6 +32,7 @@ internal sealed class LauncherForm : Form
     private readonly NumericUpDown _intervalInput;
     private readonly TextBox _outputTextBox;
     private readonly Label _statusLabel;
+    private readonly Label _providerHealthLabel;
     private readonly Button[] _actionButtons;
 
     public LauncherForm()
@@ -59,7 +61,7 @@ internal sealed class LauncherForm : Form
         var introPanel = new Panel();
         introPanel.Dock = DockStyle.Fill;
         introPanel.Padding = new Padding(12, 12, 12, 4);
-        introPanel.Height = 72;
+        introPanel.Height = 78;
 
         var titleLabel = new Label();
         titleLabel.AutoSize = true;
@@ -72,10 +74,17 @@ internal sealed class LauncherForm : Form
         summaryLabel.AutoSize = true;
         summaryLabel.MaximumSize = new Size(1120, 0);
         summaryLabel.Text =
-            "더블클릭 후 status, route, consult, new-chat, watch-start, watch-stop를 버튼으로 실행합니다. " +
-            "현재 런타임 폴더와 invoke_agent_orchestrator.ps1를 직접 호출합니다.";
+            "Run status, route, consult, new-chat, watch-start, and watch-stop from one window. " +
+            "This GUI calls invoke_agent_orchestrator.ps1 directly.";
         summaryLabel.Location = new Point(0, 28);
         introPanel.Controls.Add(summaryLabel);
+
+        _providerHealthLabel = new Label();
+        _providerHealthLabel.AutoSize = true;
+        _providerHealthLabel.MaximumSize = new Size(1120, 0);
+        _providerHealthLabel.Text = "Provider Health: unknown";
+        _providerHealthLabel.Location = new Point(0, 52);
+        introPanel.Controls.Add(_providerHealthLabel);
 
         root.Controls.Add(introPanel, 0, 0);
 
@@ -87,15 +96,14 @@ internal sealed class LauncherForm : Form
         _taskTextBox.Dock = DockStyle.Fill;
         _taskTextBox.Multiline = true;
         _taskTextBox.ScrollBars = ScrollBars.Vertical;
-        _taskTextBox.Text =
-            "같은 보고서를 이어서 다듬고 코드 설명을 보강해줘.";
+        _taskTextBox.Text = "Continue improving the local agent runtime and tighten the operating rules.";
         taskGroup.Controls.Add(_taskTextBox);
         root.Controls.Add(taskGroup, 0, 1);
 
         var promptGroup = new GroupBox();
         promptGroup.Dock = DockStyle.Fill;
         promptGroup.Padding = new Padding(12, 14, 12, 12);
-        promptGroup.Text = "Prompt Override (Consult 전용, 비워두면 Task Text 사용)";
+        promptGroup.Text = "Prompt Override (used by consult when filled)";
         _promptTextBox = new TextBox();
         _promptTextBox.Dock = DockStyle.Fill;
         _promptTextBox.Multiline = true;
@@ -130,7 +138,7 @@ internal sealed class LauncherForm : Form
 
         _sendCheckBox = new CheckBox();
         _sendCheckBox.AutoSize = true;
-        _sendCheckBox.Text = "Consult 시 바로 전송";
+        _sendCheckBox.Text = "Send in consult mode";
         _sendCheckBox.Margin = new Padding(0, 6, 16, 0);
         optionsPanel.Controls.Add(_sendCheckBox);
 
@@ -152,7 +160,7 @@ internal sealed class LauncherForm : Form
 
         _statusLabel = new Label();
         _statusLabel.AutoSize = true;
-        _statusLabel.Text = "대기 중";
+        _statusLabel.Text = "Idle";
         _statusLabel.Margin = new Padding(0, 8, 0, 0);
         optionsPanel.Controls.Add(_statusLabel);
 
@@ -167,12 +175,20 @@ internal sealed class LauncherForm : Form
         var statusButton = CreateActionButton("Status", async delegate { await ExecuteAsync("Status", new[] { "-Mode", "status" }); });
         var routeButton = CreateActionButton("Route", async delegate
         {
-            if (!EnsureTaskText()) return;
+            if (!EnsureTaskText())
+            {
+                return;
+            }
+
             await ExecuteAsync("Route", new[] { "-Mode", "route", "-TaskText", _taskTextBox.Text.Trim() });
         });
         var consultButton = CreateActionButton("Consult", async delegate
         {
-            if (!EnsureTaskText()) return;
+            if (!EnsureTaskText())
+            {
+                return;
+            }
+
             var arguments = new List<string>
             {
                 "-Mode", "consult",
@@ -220,19 +236,19 @@ internal sealed class LauncherForm : Form
         var openFolderButton = CreateActionButton("Open Runtime Folder", delegate
         {
             Process.Start("explorer.exe", _packageRoot);
-            AppendOutputLine("런타임 폴더를 열었습니다: " + _packageRoot);
+            AppendOutputLine("Opened runtime folder: " + _packageRoot);
         });
         var clearOutputButton = CreateActionButton("Clear Output", delegate
         {
             _outputTextBox.Clear();
-            _statusLabel.Text = "출력 초기화";
+            _statusLabel.Text = "Output cleared";
         });
         var copyOutputButton = CreateActionButton("Copy Output", delegate
         {
             if (!string.IsNullOrWhiteSpace(_outputTextBox.Text))
             {
                 Clipboard.SetText(_outputTextBox.Text);
-                _statusLabel.Text = "출력을 클립보드에 복사했습니다.";
+                _statusLabel.Text = "Output copied";
             }
         });
 
@@ -271,7 +287,7 @@ internal sealed class LauncherForm : Form
         outputGroup.Controls.Add(_outputTextBox);
         root.Controls.Add(outputGroup, 0, 5);
 
-        AppendOutputLine("GUI 런처 준비 완료");
+        AppendOutputLine("GUI ready");
         AppendOutputLine("Package Root: " + _packageRoot);
         AppendOutputLine("Script Path : " + _scriptPath);
     }
@@ -302,11 +318,11 @@ internal sealed class LauncherForm : Form
     {
         if (!File.Exists(_scriptPath))
         {
-            MessageBox.Show("오케스트레이터 스크립트를 찾지 못했습니다.\r\n" + _scriptPath, "Launcher Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show("Launcher script was not found.\r\n" + _scriptPath, "Launcher Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
-        SetBusy(true, title + " 실행 중...");
+        SetBusy(true, title + " running...");
         AppendOutputSeparator();
         AppendOutputLine("> " + title);
         AppendOutputLine("Args: " + string.Join(" ", args));
@@ -317,7 +333,9 @@ internal sealed class LauncherForm : Form
             if (!string.IsNullOrWhiteSpace(result.StandardOutput))
             {
                 AppendOutputLine(result.StandardOutput.TrimEnd());
+                TryUpdateProviderHealth(result.StandardOutput);
             }
+
             if (!string.IsNullOrWhiteSpace(result.StandardError))
             {
                 AppendOutputLine("[stderr]");
@@ -325,14 +343,14 @@ internal sealed class LauncherForm : Form
             }
 
             _statusLabel.Text = result.ExitCode == 0
-                ? title + " 완료"
-                : title + " 실패 (exit " + result.ExitCode.ToString(CultureInfo.InvariantCulture) + ")";
+                ? title + " finished"
+                : title + " failed (exit " + result.ExitCode.ToString(CultureInfo.InvariantCulture) + ")";
         }
         catch (Exception ex)
         {
             AppendOutputLine("[launcher error]");
             AppendOutputLine(ex.Message);
-            _statusLabel.Text = title + " 예외 발생";
+            _statusLabel.Text = title + " exception";
             MessageBox.Show(ex.Message, "Launcher Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -387,7 +405,7 @@ internal sealed class LauncherForm : Form
             return true;
         }
 
-        MessageBox.Show("Task Text를 먼저 입력해 주세요.", "Task Text Required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show("Enter task text first.", "Task Text Required", MessageBoxButtons.OK, MessageBoxIcon.Information);
         return false;
     }
 
@@ -405,6 +423,52 @@ internal sealed class LauncherForm : Form
         }
 
         return null;
+    }
+
+    private void TryUpdateProviderHealth(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.IndexOf("\"providerHealth\"", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return;
+        }
+
+        string gemini = ExtractProviderHealth(text, "gemini");
+        string chatgpt = ExtractProviderHealth(text, "chatgpt");
+        string summary = "Provider Health: " + gemini + " | " + chatgpt;
+        _providerHealthLabel.Text = summary;
+        AppendOutputLine("[health] " + summary);
+    }
+
+    private static string ExtractProviderHealth(string json, string provider)
+    {
+        var blockMatch = Regex.Match(
+            json,
+            "\"" + Regex.Escape(provider) + "\"\\s*:\\s*\\{(?<body>.*?)\\}",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        if (!blockMatch.Success)
+        {
+            return provider + " n/a";
+        }
+
+        string body = blockMatch.Groups["body"].Value;
+        int matched = ExtractInt(body, "matchedClients");
+        int responsive = ExtractInt(body, "responsiveClients");
+        bool ok = ExtractBool(body, "ok");
+
+        return provider + " " + responsive.ToString(CultureInfo.InvariantCulture) + "/" + matched.ToString(CultureInfo.InvariantCulture) + (ok ? " ok" : " down");
+    }
+
+    private static int ExtractInt(string text, string name)
+    {
+        var match = Regex.Match(text, "\"" + Regex.Escape(name) + "\"\\s*:\\s*(\\d+)", RegexOptions.IgnoreCase);
+        return match.Success ? int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+    }
+
+    private static bool ExtractBool(string text, string name)
+    {
+        var match = Regex.Match(text, "\"" + Regex.Escape(name) + "\"\\s*:\\s*(true|false)", RegexOptions.IgnoreCase);
+        return match.Success && string.Equals(match.Groups[1].Value, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     private void AppendOutputSeparator()
@@ -437,6 +501,7 @@ internal sealed class LauncherForm : Form
         {
             return current.Parent.FullName;
         }
+
         return current.FullName;
     }
 
@@ -450,6 +515,7 @@ internal sealed class LauncherForm : Form
             builder.Append(' ');
             builder.Append(Quote(arg));
         }
+
         return builder.ToString();
     }
 
