@@ -8,9 +8,12 @@
   - EXE 런처: bin\CodexLocalAgentLauncher.exe
 - 99_공용_유틸: 여러 요청에서 재사용할 공통 실행 파일과 보조 유틸
   - Git 체크포인트: 99_공용_유틸\scripts\checkpoint_tool_repo.ps1
+- docs: GitHub Pages 기반 원격 명령 포털
+- .github\ISSUE_TEMPLATE: 원격 명령용 GitHub Issue 템플릿
 
 메모:
 - 공부용 루트에는 브라우저 자동화 호환 링크가 숨김 처리되어 있을 수 있습니다.
 - 실제 관리 대상은 이 폴더 아래의 각 번호별 도구입니다.
 - 무과금 원칙: 로컬 스크립트와 사용 중인 웹 UI만 사용합니다.
 - 고위험 작업 원칙: 금융 거래, 결제, 송금, 대량 삭제 같은 작업은 자동 자율 실행 대상으로 열어두지 않습니다.
+- 원격 명령 원칙: 무료 호스팅은 GitHub Pages, 입력 채널은 GitHub Issue, 로컬 알림은 poller로 처리합니다.

@@ -30,3 +30,5 @@ Notes:
 - If Chrome is closed, consult mode cannot reach Gemini or ChatGPT until those tabs are open again.
 - Continuous-improvement rules live in `config\continuous_improvement_policy.json`.
 - Research notes comparing external agent projects live in `research_notes.md`.
+- Remote command channel config lives in `config\remote_command_channel.json`.
+- Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, and `scripts\stop_remote_command_poller.ps1`.

@@ -1,0 +1,8 @@
+{
+  "owner": "frysquirrel-A",
+  "repo": "codex-local-agent-tools",
+  "label": "remote-command",
+  "pollSeconds": 60,
+  "apiBase": "https://api.github.com",
+  "siteUrl": "https://frysquirrel-a.github.io/codex-local-agent-tools/"
+}

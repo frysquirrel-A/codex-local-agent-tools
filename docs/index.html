@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Remote Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">GitHub Pages Remote Console</p>
+      <h1>Codex Remote Command Portal</h1>
+      <p class="lede">
+        이 페이지는 무료 정적 페이지입니다. 실제 명령 전송은 같은 저장소의 GitHub Issue로 기록되고,
+        로컬 PC의 poller가 새 명령을 감지합니다.
+      </p>
+      <div class="status-grid">
+        <article>
+          <span class="label">Repository</span>
+          <a id="repo-link" href="https://github.com/frysquirrel-A/codex-local-agent-tools" target="_blank" rel="noreferrer">frysquirrel-A/codex-local-agent-tools</a>
+        </article>
+        <article>
+          <span class="label">Command Channel</span>
+          <span>GitHub Issues with <code>remote-command</code> label</span>
+        </article>
+        <article>
+          <span class="label">Local Agent Alert</span>
+          <span>Windows popup + local queue file via poller</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel composer">
+      <div class="panel-head">
+        <h2>새 원격 명령 보내기</h2>
+        <p>제출하면 GitHub 새 이슈 작성 화면으로 이동합니다. 휴대폰에서도 같은 방식으로 보낼 수 있습니다.</p>
+      </div>
+      <form id="command-form">
+        <label>
+          <span>제목</span>
+          <input id="title" name="title" maxlength="120" placeholder="예: Gemini 탭 점검 후 보고서 작성" required>
+        </label>
+        <label>
+          <span>우선순위</span>
+          <select id="priority" name="priority">
+            <option value="normal">normal</option>
+            <option value="low">low</option>
+            <option value="high">high</option>
+            <option value="urgent">urgent</option>
+          </select>
+        </label>
+        <label>
+          <span>대상</span>
+          <select id="target" name="target">
+            <option value="browser">browser</option>
+            <option value="desktop">desktop</option>
+            <option value="git">git</option>
+            <option value="report">report</option>
+            <option value="backup">backup</option>
+            <option value="other">other</option>
+          </select>
+        </label>
+        <label class="wide">
+          <span>명령</span>
+          <textarea id="command" name="command" rows="7" placeholder="여기에 실제로 원하는 작업을 적습니다." required></textarea>
+        </label>
+        <label class="wide">
+          <span>추가 메모</span>
+          <textarea id="notes" name="notes" rows="4" placeholder="마감, 링크, 제약조건, 참고 문맥 등"></textarea>
+        </label>
+        <div class="actions">
+          <button type="submit">GitHub 이슈로 보내기</button>
+          <button type="button" id="copy-body">본문 복사</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>열려 있는 원격 명령</h2>
+        <p>공개 저장소 기준으로 최신 open issue를 보여줍니다.</p>
+      </div>
+      <div id="issue-list" class="issue-list">
+        <p class="muted">불러오는 중...</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>운영 방식</h2>
+      </div>
+      <ul class="rules">
+        <li>이 페이지는 무료 정적 호스팅이고, 서버 코드는 없습니다.</li>
+        <li>실제 메시지 저장은 GitHub Issue를 사용합니다.</li>
+        <li>로컬 PC에서는 poller가 새 이슈를 주기적으로 확인합니다.</li>
+        <li>민감한 명령은 현재 공개 저장소 구조상 노출될 수 있습니다.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

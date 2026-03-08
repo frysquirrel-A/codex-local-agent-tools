@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Remote command site
+    url: https://frysquirrel-a.github.io/codex-local-agent-tools/
+    about: Open the lightweight web form that creates remote command issues.
