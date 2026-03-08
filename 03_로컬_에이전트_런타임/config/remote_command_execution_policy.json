@@ -1,0 +1,42 @@
+{
+  "version": "2026-03-08",
+  "structuredCommandRequired": true,
+  "trustedIssueUsers": [
+    "frysquirrel-A"
+  ],
+  "autoExecuteModes": [
+    "browser-command",
+    "llm-prompt",
+    "desktop-command"
+  ],
+  "browserAllowedActions": [
+    "navigate",
+    "click-text",
+    "visible-text",
+    "set-text",
+    "click"
+  ],
+  "desktopAllowedActions": [
+    "screen-size",
+    "cursor-pos",
+    "list-windows",
+    "focus-window",
+    "screen-capture",
+    "click",
+    "type",
+    "combo"
+  ],
+  "llmAllowedProviders": [
+    "chatgpt",
+    "gemini"
+  ],
+  "preferBackgroundBridgeClient": true,
+  "commentOnSuccess": true,
+  "commentOnFailure": true,
+  "commentOnManualReview": true,
+  "commentOnIgnoredOwnerCommands": true,
+  "commentOnIgnoredExternalCommands": false,
+  "closeIssueOnSuccess": true,
+  "maxItemsPerRun": 3,
+  "artifactRoot": "artifacts\\remote_commands"
+}

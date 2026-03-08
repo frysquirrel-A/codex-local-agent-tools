@@ -9,7 +9,10 @@ assignees: ""
 ## Remote Command
 
 ### Command
-<!-- Write the exact command or request for the agent -->
+<!-- v1 auto-execution expects structured JSON.
+Example:
+{"mode":"browser-command","action":"navigate","url":"https://example.com"}
+-->
 
 ### Priority
 <!-- low / normal / high / urgent -->

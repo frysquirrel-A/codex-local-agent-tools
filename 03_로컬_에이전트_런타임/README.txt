@@ -31,10 +31,18 @@ Notes:
 - Continuous-improvement rules live in `config\continuous_improvement_policy.json`.
 - Research notes comparing external agent projects live in `research_notes.md`.
 - Remote command channel config lives in `config\remote_command_channel.json`.
-- Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, `scripts\stop_remote_command_poller.ps1`, `scripts\get_remote_command_queue.ps1`, `scripts\mark_remote_command_processed.ps1`, and `scripts\summarize_remote_command_inbox.ps1`.
+- Remote command scripts are `scripts\check_remote_commands.ps1`, `scripts\start_remote_command_poller.ps1`, `scripts\stop_remote_command_poller.ps1`, `scripts\get_remote_command_queue.ps1`, `scripts\mark_remote_command_processed.ps1`, `scripts\summarize_remote_command_inbox.ps1`, and `scripts\execute_remote_command_inbox.ps1`.
 - The normalized inbox digest is written to `state\remote_command_inbox.json` on each poll cycle.
 
 Remote command inbox:
-- `check_remote_commands.ps1` pulls GitHub issues into the local queue.
+- `check_remote_commands.ps1` pulls GitHub issues into the local queue and uses the local git credential token to avoid anonymous API rate limits.
 - `summarize_remote_command_inbox.ps1` maps queued items to a safe mode, risk level, approval requirement, and suggested consultation providers.
-- The worker keeps `remote_command_inbox.json` fresh so a later executor can consume a preclassified inbox instead of raw issue text.
+- `execute_remote_command_inbox.ps1` handles owner-only structured commands, writes dry-run artifacts, posts GitHub issue comments through the local git credential token, and closes successful issues.
+- The worker keeps `remote_command_inbox.json` fresh and then runs the executor each poll cycle.
+
+Structured remote command v1:
+- The `Command` field should contain JSON, not free-form natural language.
+- Example browser command: `{"mode":"browser-command","action":"navigate","url":"https://example.com"}`
+- Example LLM command: `{"mode":"llm-prompt","provider":"chatgpt","prompt":"Summarize the current page.","send":true}`
+- Example desktop command: `{"mode":"desktop-command","action":"screen-size"}`
+- Non-JSON commands stay in manual review.

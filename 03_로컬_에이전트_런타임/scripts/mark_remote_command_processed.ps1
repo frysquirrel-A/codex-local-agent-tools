@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [int]$Number,
-    [ValidateSet("processed", "ignored", "failed")]
+    [ValidateSet("pending", "processed", "ignored", "failed")]
     [string]$Status = "processed",
     [string]$Result
 )
@@ -18,7 +18,8 @@ if (-not (Test-Path -LiteralPath $queuePath)) {
 }
 
 $items = @()
-$rawItems = @(Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json)
+$queueResponse = Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
+$rawItems = foreach ($entry in @($queueResponse)) { $entry }
 foreach ($item in $rawItems) {
     $body = [string]$item.body
     $items += [pscustomobject]@{
@@ -49,7 +50,12 @@ foreach ($item in $items) {
     }
 
     $item.status = $Status
-    $item.processedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    if ($Status -eq "pending") {
+        $item.processedAt = $null
+    }
+    else {
+        $item.processedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    }
     if (-not [string]::IsNullOrWhiteSpace($Result)) {
         $item.result = $Result
     }

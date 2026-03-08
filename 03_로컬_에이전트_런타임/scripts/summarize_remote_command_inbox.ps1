@@ -15,6 +15,7 @@ $queuePath = Join-Path $stateDir "remote_command_queue.json"
 $outboxPath = Join-Path $stateDir "remote_command_inbox.json"
 $agentPolicyPath = Join-Path $configDir "agent_policy.json"
 $inboxPolicyPath = Join-Path $configDir "remote_command_inbox_policy.json"
+$executionPolicyPath = Join-Path $configDir "remote_command_execution_policy.json"
 
 function Read-JsonFile {
     param([string]$Path)
@@ -121,6 +122,27 @@ function Get-ConsultProviders {
     return @($Policy.defaultConsultProviders)
 }
 
+function Try-ParseStructuredCommand {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $null
+    }
+
+    try {
+        $parsed = $Text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return $null
+    }
+
+    if (-not ($parsed.PSObject.Properties.Name -contains "mode")) {
+        return $null
+    }
+
+    return $parsed
+}
+
 if (-not (Test-Path -LiteralPath $queuePath)) {
     $empty = [ordered]@{
         ok = $true
@@ -141,7 +163,9 @@ if (-not (Test-Path -LiteralPath $queuePath)) {
 
 $agentPolicy = Read-JsonFile -Path $agentPolicyPath
 $inboxPolicy = Read-JsonFile -Path $inboxPolicyPath
-$queue = @(Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json)
+$executionPolicy = if (Test-Path -LiteralPath $executionPolicyPath) { Read-JsonFile -Path $executionPolicyPath } else { $null }
+$queueResponse = Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
+$queue = foreach ($entry in @($queueResponse)) { $entry }
 
 if ($Status -ne "all") {
     $queue = @($queue | Where-Object { [string]$_.status -eq $Status })
@@ -158,9 +182,37 @@ foreach ($item in $queue) {
     $financialHits = Test-KeywordHit -Text $joined -Keywords @($agentPolicy.keywordGroups.financialExecution)
     $spendHits = Test-KeywordHit -Text $joined -Keywords @($agentPolicy.keywordGroups.spendingApproval)
     $destructiveHits = Test-KeywordHit -Text $joined -Keywords @($agentPolicy.keywordGroups.destructive)
-    $targetMode = Get-TargetMode -Target $target -Policy $inboxPolicy
+    $structuredCommand = Try-ParseStructuredCommand -Text $command
+    $structuredMode = $null
+    $structuredReason = $null
+    $structuredReady = $false
+    $structuredTrusted = $false
+    if ($executionPolicy -and $structuredCommand) {
+        $structuredTrusted = @($executionPolicy.trustedIssueUsers) -contains [string]$item.user
+        $structuredMode = [string]$structuredCommand.mode
+        if (-not $structuredTrusted) {
+            $structuredReason = "Structured command came from an untrusted issue author."
+        }
+        elseif ($structuredMode -eq "browser-command" -and @($executionPolicy.browserAllowedActions) -contains [string]$structuredCommand.action) {
+            $structuredReady = $true
+            $structuredReason = "Structured browser command matched the executor allowlist."
+        }
+        elseif ($structuredMode -eq "desktop-command" -and @($executionPolicy.desktopAllowedActions) -contains [string]$structuredCommand.action) {
+            $structuredReady = $true
+            $structuredReason = "Structured desktop command matched the executor allowlist."
+        }
+        elseif ($structuredMode -eq "llm-prompt" -and @($executionPolicy.llmAllowedProviders) -contains [string]$structuredCommand.provider) {
+            $structuredReady = $true
+            $structuredReason = "Structured LLM command matched the executor allowlist."
+        }
+        else {
+            $structuredReason = "Structured command did not match the current executor allowlist."
+        }
+    }
+
+    $targetMode = if ($structuredMode) { $null } else { Get-TargetMode -Target $target -Policy $inboxPolicy }
     $keywordMode = if ($targetMode) { $null } else { Get-KeywordMode -Text $joined -Policy $inboxPolicy }
-    $recommendedMode = if ($targetMode) { $targetMode } elseif ($keywordMode) { [string]$keywordMode.mode } else { [string]$inboxPolicy.defaultMode }
+    $recommendedMode = if ($structuredMode) { $structuredMode } elseif ($targetMode) { $targetMode } elseif ($keywordMode) { [string]$keywordMode.mode } else { [string]$inboxPolicy.defaultMode }
 
     $classification = "ready"
     $risk = "low"
@@ -194,6 +246,24 @@ foreach ($item in $queue) {
         $policyBucket = "destructive"
         $reason = [string]$inboxPolicy.destructiveApprovalMessage
     }
+    elseif ($structuredMode) {
+        if (-not $structuredTrusted) {
+            $classification = "manual-review"
+            $risk = "medium"
+            $policyBucket = "trust"
+            $reason = $structuredReason
+        }
+        elseif ($structuredReady) {
+            $classification = "ready"
+            $risk = if ($structuredMode -eq "desktop-command") { "medium" } else { "low" }
+            $reason = $structuredReason
+        }
+        else {
+            $classification = "manual-review"
+            $risk = "medium"
+            $reason = $structuredReason
+        }
+    }
     else {
         $modeApproval = Get-ModeApproval -Mode $recommendedMode -AgentPolicy $agentPolicy
         if ($modeApproval -and [bool]$modeApproval.requiresApproval) {
@@ -219,7 +289,7 @@ foreach ($item in $queue) {
     }
 
     $consultProviders = Get-ConsultProviders -Mode $recommendedMode -Policy $inboxPolicy
-    $modeSource = if ($targetMode) { "target" } elseif ($keywordMode) { "keywords" } else { "default" }
+    $modeSource = if ($structuredMode) { "structured-command" } elseif ($targetMode) { "target" } elseif ($keywordMode) { "keywords" } else { "default" }
     $matchedKeywords = @($financialHits + $spendHits + $destructiveHits)
     if ($keywordMode) {
         $matchedKeywords += @($keywordMode.hits)

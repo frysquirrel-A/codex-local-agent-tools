@@ -22,6 +22,24 @@ $headers = @{
     "Accept" = "application/vnd.github+json"
 }
 
+try {
+    $credentialRaw = "protocol=https`nhost=github.com`n" | git credential fill 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        foreach ($line in @($credentialRaw)) {
+            if ($line -like "password=*") {
+                $token = $line.Substring("password=".Length)
+                if (-not [string]::IsNullOrWhiteSpace($token)) {
+                    $headers["Authorization"] = "Bearer $token"
+                    $headers["X-GitHub-Api-Version"] = "2022-11-28"
+                }
+                break
+            }
+        }
+    }
+}
+catch {
+}
+
 function Get-SectionValue {
     param(
         [string]$Text,
@@ -112,7 +130,8 @@ if (Test-Path -LiteralPath $statePath) {
 }
 
 if (Test-Path -LiteralPath $queuePath) {
-    $rawQueue = @(Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json)
+    $queueResponse = Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $rawQueue = foreach ($entry in @($queueResponse)) { $entry }
     $queue = @($rawQueue | ForEach-Object { Normalize-QueueItem -Item $_ })
 } else {
     $queue = @()
@@ -124,7 +143,8 @@ foreach ($item in $queue) {
 }
 
 $uri = "{0}/repos/{1}/{2}/issues?state=open&sort=created&direction=asc&per_page=30" -f $config.apiBase, $config.owner, $config.repo
-$issues = @(Invoke-RestMethod -Uri $uri -Headers $headers -Method Get)
+$issueResponse = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
+$issues = foreach ($issue in @($issueResponse)) { $issue }
 $newItems = @()
 $lastSeen = [int]$state.lastSeenIssueNumber
 
