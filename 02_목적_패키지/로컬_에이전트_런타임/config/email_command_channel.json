@@ -1,0 +1,45 @@
+{
+  "gmail": {
+    "urlHint": "mail.google.com",
+    "composeUrl": "https://mail.google.com/mail/u/0/#inbox?compose=new",
+    "searchInputSelector": "input[aria-label='\\uBA54\\uC77C \\uAC80\\uC0C9'], input[aria-label='Search mail']",
+    "recipientSelector": "input[aria-label='\\uC218\\uC2E0\\uC790'], input[aria-label='To recipients']",
+    "subjectSelector": "input[placeholder='\\uC81C\\uBAA9'], input[placeholder='Subject']",
+    "bodySelector": "div[aria-label='\\uBA54\\uC77C \\uBCF8\\uBB38'][role='textbox'], div[aria-label='Message Body'][role='textbox']",
+    "sendSelectors": [
+      "div[role='button'][aria-label*='\\uBCF4\\uB0B4\\uAE30']",
+      "div[role='button'][data-tooltip*='\\uBCF4\\uB0B4\\uAE30']",
+      "div[role='button'][aria-label*='Send']",
+      "div[role='button'][data-tooltip*='Send']"
+    ],
+    "searchResultRowSelector": "tr.zA"
+  },
+  "mailbox": {
+    "allowSenders": [
+      "emnogib@icloud.com"
+    ],
+    "subjectPrefix": "CMD:",
+    "searchQueryTemplate": "in:inbox is:unread from:{sender} subject:\"CMD:\" newer_than:14d",
+    "noResultsPhrases": [
+      "\\uAC80\\uC0C9\\uACFC \\uC77C\\uCE58\\uD558\\uB294 \\uBA54\\uC77C\\uC774 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.",
+      "No messages matched your search."
+    ]
+  },
+  "markers": {
+    "commandStart": "[[CODEX-CMD]]",
+    "commandEnd": "[[/CODEX-CMD]]",
+    "jsonStart": "[[CODEX-JSON]]",
+    "jsonEnd": "[[/CODEX-JSON]]"
+  },
+  "relay": {
+    "baseUrl": "http://127.0.0.1:8767"
+  },
+  "channel": {
+    "sessionPrefix": "mail",
+    "replySubjectPrefix": "Codex",
+    "pollSeconds": 15,
+    "resultWaitSeconds": 90,
+    "resultPollSeconds": 3,
+    "maxMailChars": 12000
+  }
+}

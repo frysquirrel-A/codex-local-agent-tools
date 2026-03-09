@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("llm-prompt", "browser-command", "desktop-command", "desktop-policy", "desktop-mode-set", "screen-capture", "screen-watch-start", "screen-watch-stop", "chat-relay-start", "chat-relay-stop", "chat-relay-status", "keepalive-start", "keepalive-stop", "keepalive-status", "spend-approval", "spend-approve")]
+    [ValidateSet("llm-prompt", "browser-command", "desktop-command", "desktop-policy", "desktop-mode-set", "screen-capture", "screen-watch-start", "screen-watch-stop", "chat-relay-start", "chat-relay-stop", "chat-relay-status", "mail-channel-start", "mail-channel-stop", "mail-channel-status", "mail-channel-run-once", "mail-send", "keepalive-start", "keepalive-stop", "keepalive-status", "spend-approval", "spend-approve")]
     [string]$Mode,
     [string]$TaskText,
     [ValidateSet("gemini", "chatgpt")]
@@ -25,7 +25,11 @@ param(
     [string]$Reason,
     [string]$Recommendation = "승인 권장",
     [string]$Alternatives = "보류 또는 미도입",
-    [string]$RequestId
+    [string]$RequestId,
+    [string]$MailTo,
+    [string]$MailSubject,
+    [string]$MailBody,
+    [switch]$MailVerify
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,6 +54,9 @@ $screenWatchStart = Join-Path $scriptRoot "start_screen_watch.ps1"
 $screenWatchStop = Join-Path $scriptRoot "stop_screen_watch.ps1"
 $chatRelayStart = Join-Path $scriptRoot "start_local_chat_relay.ps1"
 $chatRelayStop = Join-Path $scriptRoot "stop_local_chat_relay.ps1"
+$mailChannelStart = Join-Path $scriptRoot "start_gmail_command_channel.ps1"
+$mailChannelStop = Join-Path $scriptRoot "stop_gmail_command_channel.ps1"
+$mailChannelWorker = Join-Path $scriptRoot "gmail_command_channel.py"
 $spendReportBuilder = Join-Path $scriptRoot "build_spend_approval_report.ps1"
 $spendReportPrinter = Join-Path $scriptRoot "print_spend_approval_report.ps1"
 $spendQueuePath = Join-Path $packageRoot "data\\spend_requests.json"
@@ -57,7 +64,9 @@ $logDir = Join-Path $packageRoot "logs"
 $logPath = Join-Path $logDir "tasks.jsonl"
 $screenWatchPidPath = Join-Path $packageRoot "screen_watch.pid"
 $screenWatchMetaPath = Join-Path $packageRoot "latest\\screen_latest.json"
+$mailChannelPidPath = Join-Path $packageRoot "state\\gmail_command_channel.pid"
 $taskId = [guid]::NewGuid().ToString()
+$pythonExe = (Get-Command python -ErrorAction Stop).Source
 
 if (-not (Test-Path -LiteralPath $logDir)) {
     New-Item -ItemType Directory -Path $logDir | Out-Null
@@ -191,6 +200,48 @@ function Ensure-ChatRelay {
     }
 
     throw "Local chat relay did not become ready."
+}
+
+function Test-MailChannelRunning {
+    if (-not (Test-Path -LiteralPath $mailChannelPidPath)) {
+        return $false
+    }
+
+    $pidValue = (Get-Content -LiteralPath $mailChannelPidPath -Raw -Encoding ASCII).Trim()
+    if (-not ($pidValue -match '^\d+$')) {
+        return $false
+    }
+
+    return [bool](Get-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue)
+}
+
+function Get-MailChannelStatus {
+    $raw = & $pythonExe $mailChannelWorker "status"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Mail command channel status failed."
+    }
+    return Convert-RawJson -Raw $raw
+}
+
+function Ensure-MailChannel {
+    if (Test-MailChannelRunning) {
+        return
+    }
+
+    Ensure-ChatRelay
+    $raw = & $mailChannelStart
+    if ($LASTEXITCODE -ne 0) {
+        throw "Mail command channel did not start."
+    }
+
+    for ($attempt = 1; $attempt -le 24; $attempt++) {
+        Start-Sleep -Milliseconds 250
+        if (Test-MailChannelRunning) {
+            return
+        }
+    }
+
+    throw "Mail command channel did not become ready."
 }
 
 function Get-RiskDecision {
@@ -458,10 +509,52 @@ try {
                 }
             }
         }
+        "mail-channel-start" {
+            Ensure-MailChannel
+            $result = [ordered]@{
+                ok = $true
+                mode = "mail-channel-start"
+                channel = (Get-MailChannelStatus)
+            }
+        }
+        "mail-channel-stop" {
+            $raw = & $mailChannelStop
+            $result = Convert-RawJson -Raw $raw
+        }
+        "mail-channel-status" {
+            $result = [ordered]@{
+                ok = $true
+                mode = "mail-channel-status"
+                channel = (Get-MailChannelStatus)
+            }
+        }
+        "mail-channel-run-once" {
+            Ensure-ChatRelay
+            $raw = & $pythonExe $mailChannelWorker "run-once"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Mail command channel run-once failed."
+            }
+            $result = Convert-RawJson -Raw $raw
+        }
+        "mail-send" {
+            if ([string]::IsNullOrWhiteSpace($MailTo) -or [string]::IsNullOrWhiteSpace($MailSubject) -or $null -eq $MailBody) {
+                throw "MailTo, MailSubject, and MailBody are required for mail-send mode."
+            }
+            $args = @($mailChannelWorker, "send-mail", "--to", $MailTo, "--subject", $MailSubject, "--body", $MailBody)
+            if ($MailVerify) {
+                $args += "--verify"
+            }
+            $raw = & $pythonExe @args
+            if ($LASTEXITCODE -ne 0) {
+                throw "Mail send failed."
+            }
+            $result = Convert-RawJson -Raw $raw
+        }
         "keepalive-start" {
             Ensure-BridgeServer
             Ensure-DesktopServer
             Ensure-ChatRelay
+            Ensure-MailChannel
             if ($OutPath) {
                 $watchRaw = & $screenWatchStart -IntervalSeconds $IntervalSeconds -OutPath $OutPath
             }
@@ -483,6 +576,10 @@ try {
                     ready = (Test-ChatRelayReady)
                     status = (Get-ChatRelayStatus)
                 }
+                mail = [ordered]@{
+                    ready = (Test-MailChannelRunning)
+                    status = (Get-MailChannelStatus)
+                }
                 screenWatch = (Convert-RawJson -Raw $watchRaw)
             }
         }
@@ -494,6 +591,7 @@ try {
             }
             $desktopRaw = & $desktopServerStop
             $relayRaw = & $chatRelayStop
+            $mailRaw = & $mailChannelStop
             $watchRaw = & $screenWatchStop
 
             $result = [ordered]@{
@@ -505,12 +603,14 @@ try {
                 }
                 desktop = (Convert-RawJson -Raw $desktopRaw)
                 relay = (Convert-RawJson -Raw $relayRaw)
+                mail = (Convert-RawJson -Raw $mailRaw)
                 screenWatch = (Convert-RawJson -Raw $watchRaw)
             }
         }
         "keepalive-status" {
             $desktopReady = Test-DesktopServerReady
             $relayReady = Test-ChatRelayReady
+            $mailReady = Test-MailChannelRunning
             $result = [ordered]@{
                 ok = $true
                 mode = "keepalive-status"
@@ -524,6 +624,10 @@ try {
                 relay = [ordered]@{
                     ready = $relayReady
                     status = $(if ($relayReady) { Get-ChatRelayStatus } else { $null })
+                }
+                mail = [ordered]@{
+                    ready = $mailReady
+                    status = $(if ($mailReady) { Get-MailChannelStatus } else { $null })
                 }
                 screenWatch = (Get-ScreenWatchInfo)
             }
