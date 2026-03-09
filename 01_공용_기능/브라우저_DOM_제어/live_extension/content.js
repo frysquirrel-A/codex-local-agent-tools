@@ -1,6 +1,10 @@
 const HEARTBEAT_MS = 250;
 const CLIENT_ID_KEY = "study-live-bridge-client-id";
 const LLM_RESPONSE_STATE = new Map();
+const PAGE_RELAY_ALLOWED_ORIGIN = "https://frysquirrel-a.github.io";
+const PAGE_RELAY_ALLOWED_PATH_PREFIX = "/codex-local-agent-tools";
+const PAGE_RELAY_REQUEST_SOURCE = "codex-page-relay";
+const PAGE_RELAY_RESPONSE_SOURCE = "study-live-relay-bridge";
 
 function getClientId() {
   let value = sessionStorage.getItem(CLIENT_ID_KEY);
@@ -387,6 +391,73 @@ function sendRuntimeMessage(message) {
   });
 }
 
+function pageRelayBridgeAllowed() {
+  return location.origin === PAGE_RELAY_ALLOWED_ORIGIN &&
+    location.pathname.startsWith(PAGE_RELAY_ALLOWED_PATH_PREFIX);
+}
+
+function postPageRelayMessage(payload) {
+  window.postMessage({
+    source: PAGE_RELAY_RESPONSE_SOURCE,
+    ...payload
+  }, location.origin);
+}
+
+async function handlePageRelayMessage(event) {
+  if (event.source !== window || !pageRelayBridgeAllowed()) {
+    return;
+  }
+
+  const message = event.data;
+  if (!message || message.source !== PAGE_RELAY_REQUEST_SOURCE || message.type !== "relay-request") {
+    return;
+  }
+
+  const requestId = String(message.requestId || "").trim();
+  if (!requestId) {
+    return;
+  }
+
+  const payload = await sendRuntimeMessage({
+    type: "relayFetch",
+    request: message.request || {}
+  });
+
+  postPageRelayMessage({
+    type: "relay-response",
+    requestId,
+    payload
+  });
+}
+
+function installPageRelayBridge() {
+  if (!pageRelayBridgeAllowed()) {
+    return;
+  }
+
+  window.addEventListener("message", (event) => {
+    handlePageRelayMessage(event).catch((error) => {
+      const message = event?.data || {};
+      const requestId = String(message.requestId || "").trim();
+      if (!requestId) {
+        return;
+      }
+      postPageRelayMessage({
+        type: "relay-response",
+        requestId,
+        payload: {
+          ok: false,
+          reason: String(error)
+        }
+      });
+    });
+  });
+
+  postPageRelayMessage({
+    type: "relay-ready"
+  });
+}
+
 async function executeCommand(command) {
   if (!command || !command.action) {
     return { ok: false, reason: "Missing action." };
@@ -590,5 +661,6 @@ async function heartbeat() {
   }
 }
 
+installPageRelayBridge();
 setInterval(heartbeat, HEARTBEAT_MS);
 heartbeat();

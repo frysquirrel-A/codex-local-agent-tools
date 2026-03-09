@@ -8,6 +8,9 @@ const FALLBACK_POLL_MS = 15000;
 const RELAY_STATUS_TIMEOUT_MS = 3500;
 const RELAY_STATUS_RETRIES = 3;
 const RELAY_RETRY_DELAY_MS = 350;
+const RELAY_PAGE_REQUEST_SOURCE = "codex-page-relay";
+const RELAY_PAGE_RESPONSE_SOURCE = "study-live-relay-bridge";
+const RELAY_PAGE_TIMEOUT_MS = 1500;
 const SESSION_KEY = "codex-chat-session-id";
 const THREAD_LIMIT = 14;
 
@@ -25,7 +28,8 @@ const state = {
   pollHandle: null,
   fallbackHandle: null,
   relayError: "",
-  relayProbePromise: null
+  relayProbePromise: null,
+  relayBridgeReady: false
 };
 
 function getOrCreateSessionId() {
@@ -257,6 +261,10 @@ function clearTimer(handle) {
   return null;
 }
 
+function relayPageBridgeAllowed() {
+  return window.location.origin === "https://frysquirrel-a.github.io";
+}
+
 function formatRelayError(error, base) {
   const source = (base || "").replace(/^https?:\/\//, "");
   if (!error) {
@@ -271,19 +279,80 @@ function formatRelayError(error, base) {
   return source ? `${source}: ${message}` : message;
 }
 
-async function fetchRelayStatus(base) {
+function buildRelayUrl(base, path, query = {}) {
+  const url = new URL(`${base}${path}`);
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    url.searchParams.set(key, String(value));
+  });
+  return url.toString();
+}
+
+async function requestRelayJsonViaPageBridge(path, options = {}) {
+  return new Promise((resolve, reject) => {
+    const requestId = `relay-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("message", handleMessage);
+      reject(new Error("relay bridge timeout"));
+    }, options.timeoutMs || RELAY_PAGE_TIMEOUT_MS);
+
+    function handleMessage(event) {
+      if (event.source !== window) {
+        return;
+      }
+
+      const message = event.data;
+      if (!message || message.source !== RELAY_PAGE_RESPONSE_SOURCE || message.type !== "relay-response") {
+        return;
+      }
+      if (message.requestId !== requestId) {
+        return;
+      }
+
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", handleMessage);
+
+      const payload = message.payload || {};
+      if (!payload.ok) {
+        reject(new Error(payload.reason || `relay bridge HTTP ${payload.status || "error"}`));
+        return;
+      }
+
+      resolve(payload.body || {});
+    }
+
+    window.addEventListener("message", handleMessage);
+    window.postMessage({
+      source: RELAY_PAGE_REQUEST_SOURCE,
+      type: "relay-request",
+      requestId,
+      request: {
+        method: options.method || "GET",
+        path,
+        query: options.query || {},
+        body: options.body || {}
+      }
+    }, window.location.origin);
+  });
+}
+
+async function requestRelayJsonDirect(base, path, options = {}) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), RELAY_STATUS_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || RELAY_STATUS_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${base}/status`, {
-      method: "GET",
+    const response = await fetch(buildRelayUrl(base, path, options.query || {}), {
+      method: options.method || "GET",
       mode: "cors",
       cache: "no-store",
       credentials: "omit",
       headers: {
-        Accept: "application/json"
+        Accept: "application/json",
+        ...(options.method === "POST" ? { "Content-Type": "application/json" } : {})
       },
+      body: options.method === "POST" ? JSON.stringify(options.body || {}) : undefined,
       signal: controller.signal
     });
 
@@ -295,6 +364,43 @@ async function fetchRelayStatus(base) {
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+async function requestRelayJson(path, options = {}) {
+  const errors = [];
+
+  if (relayPageBridgeAllowed()) {
+    try {
+      const payload = await requestRelayJsonViaPageBridge(path, options);
+      state.relayBase = "extension-bridge";
+      state.relayBridgeReady = true;
+      return payload;
+    } catch (error) {
+      errors.push(formatRelayError(error, "extension-bridge"));
+    }
+  }
+
+  const bases = [];
+  if (options.base && options.base !== "extension-bridge") {
+    bases.push(options.base);
+  }
+  RELAY_BASES.forEach((base) => {
+    if (!bases.includes(base)) {
+      bases.push(base);
+    }
+  });
+
+  for (const base of bases) {
+    try {
+      const payload = await requestRelayJsonDirect(base, path, options);
+      state.relayBase = base;
+      return payload;
+    } catch (error) {
+      errors.push(formatRelayError(error, base));
+    }
+  }
+
+  throw new Error(errors.join(" | ") || "relay request failed");
 }
 
 async function discoverRelay(options = {}) {
@@ -309,9 +415,8 @@ async function discoverRelay(options = {}) {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       for (const base of RELAY_BASES) {
         try {
-          const payload = await fetchRelayStatus(base);
+          const payload = await requestRelayJson("/status", { base });
           if (payload?.ok) {
-            state.relayBase = base;
             state.relayConnected = true;
             state.relayError = "";
             return true;
@@ -370,16 +475,11 @@ async function loadRelaySession() {
 
   state.loading = true;
   try {
-    const response = await fetch(`${state.relayBase}/api/session?sessionId=${encodeURIComponent(state.sessionId)}`, {
-      mode: "cors",
-      cache: "no-store",
-      credentials: "omit"
+    const payload = await requestRelayJson("/api/session", {
+      query: {
+        sessionId: state.sessionId
+      }
     });
-    if (!response.ok) {
-      throw new Error("relay session fetch failed");
-    }
-
-    const payload = await response.json();
     state.relayEntries = Array.isArray(payload.entries) ? payload.entries : [];
     state.relayConnected = true;
     renderThread();
@@ -575,26 +675,17 @@ async function sendMessage(event) {
   setConnectionState("sending");
 
   try {
-    const response = await fetch(`${state.relayBase}/api/message`, {
+    await requestRelayJson("/api/message", {
       method: "POST",
-      mode: "cors",
-      cache: "no-store",
-      credentials: "omit",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
+      body: {
         sessionId: state.sessionId,
         text: message,
         command,
         target: state.selectedTarget,
         priority: state.selectedPriority
-      })
+      },
+      timeoutMs: 5000
     });
-
-    if (!response.ok) {
-      throw new Error(`message submit failed (${response.status})`);
-    }
 
     document.getElementById("message").value = "";
     document.getElementById("command-json").value = "";
@@ -620,6 +711,18 @@ function installRelayWakeHooks() {
   };
 
   window.addEventListener("focus", tryWakeRelay);
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) {
+      return;
+    }
+
+    const message = event.data;
+    if (!message || message.source !== RELAY_PAGE_RESPONSE_SOURCE || message.type !== "relay-ready") {
+      return;
+    }
+
+    state.relayBridgeReady = true;
+  });
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState === "visible") {
       await tryWakeRelay();
