@@ -5,6 +5,9 @@ const TITLE_PREFIX = "[remote]";
 const RELAY_BASES = ["http://127.0.0.1:8767", "http://localhost:8767"];
 const RELAY_POLL_MS = 2500;
 const FALLBACK_POLL_MS = 15000;
+const RELAY_STATUS_TIMEOUT_MS = 3500;
+const RELAY_STATUS_RETRIES = 3;
+const RELAY_RETRY_DELAY_MS = 350;
 const SESSION_KEY = "codex-chat-session-id";
 const THREAD_LIMIT = 14;
 
@@ -20,7 +23,9 @@ const state = {
   selectedPriority: "normal",
   toolsOpen: false,
   pollHandle: null,
-  fallbackHandle: null
+  fallbackHandle: null,
+  relayError: "",
+  relayProbePromise: null
 };
 
 function getOrCreateSessionId() {
@@ -55,6 +60,10 @@ function escapeHtml(value) {
 
 function normalizeText(value) {
   return (value || "").replace(/\s+/g, " ").trim();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function parseSection(body, heading) {
@@ -143,13 +152,18 @@ function timeLabel(value) {
   if (!value) {
     return "";
   }
-  return new Date(value).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+
+  return new Date(value).toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function dayLabel(value) {
   if (!value) {
     return "";
   }
+
   return new Date(value).toLocaleDateString("ko-KR", {
     month: "long",
     day: "numeric",
@@ -167,7 +181,9 @@ function createFallbackStatus(issue, queueStateText) {
     id: `fallback-status-${issue.number}`,
     kind: "status",
     tone: queueStateText === "failed" ? "error" : "queued",
-    text: queueStateText === "failed" ? "작업이 실패했지만 자세한 답변은 아직 없습니다." : "Codex가 확인 중",
+    text: queueStateText === "failed"
+      ? "작업은 실패했지만 상세 요약이 아직 없습니다."
+      : "Codex가 메시지를 확인 중",
     createdAt: issue.updated_at,
     issueNumber: issue.number
   };
@@ -179,6 +195,7 @@ function buildFallbackTranscript(issues, commentsByIssue) {
   issues.forEach((issue) => {
     const command = parseSection(issue.body, "Command");
     const target = parseSection(issue.body, "Target") || "other";
+
     entries.push({
       id: `fallback-user-${issue.number}`,
       kind: "message",
@@ -233,35 +250,117 @@ async function fetchLatestComments(issues) {
   return new Map(entries);
 }
 
-async function discoverRelay() {
-  for (const base of RELAY_BASES) {
-    try {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 1200);
-      const response = await fetch(`${base}/status`, {
-        method: "GET",
-        mode: "cors",
-        cache: "no-store",
-        credentials: "omit",
-        signal: controller.signal
-      });
-      window.clearTimeout(timeout);
-      if (!response.ok) {
-        continue;
-      }
-      const payload = await response.json();
-      if (payload.ok) {
-        state.relayBase = base;
-        state.relayConnected = true;
-        return true;
-      }
-    } catch {
-    }
+function clearTimer(handle) {
+  if (handle) {
+    window.clearInterval(handle);
+  }
+  return null;
+}
+
+function formatRelayError(error, base) {
+  const source = (base || "").replace(/^https?:\/\//, "");
+  if (!error) {
+    return source || "relay probe failed";
   }
 
-  state.relayBase = null;
-  state.relayConnected = false;
-  return false;
+  if (error.name === "AbortError") {
+    return `${source}: relay status timeout`;
+  }
+
+  const message = String(error.message || error || "relay probe failed").trim();
+  return source ? `${source}: ${message}` : message;
+}
+
+async function fetchRelayStatus(base) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), RELAY_STATUS_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${base}/status`, {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+      credentials: "omit",
+      headers: {
+        Accept: "application/json"
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`status ${response.status}`);
+    }
+
+    return response.json();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function discoverRelay(options = {}) {
+  if (state.relayProbePromise) {
+    return state.relayProbePromise;
+  }
+
+  const attempts = Math.max(Number(options.attempts || RELAY_STATUS_RETRIES), 1);
+  state.relayProbePromise = (async () => {
+    let lastError = "";
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      for (const base of RELAY_BASES) {
+        try {
+          const payload = await fetchRelayStatus(base);
+          if (payload?.ok) {
+            state.relayBase = base;
+            state.relayConnected = true;
+            state.relayError = "";
+            return true;
+          }
+          lastError = `${base.replace(/^https?:\/\//, "")}: invalid status payload`;
+        } catch (error) {
+          lastError = formatRelayError(error, base);
+        }
+      }
+
+      if (attempt < attempts - 1) {
+        await sleep(RELAY_RETRY_DELAY_MS);
+      }
+    }
+
+    state.relayBase = null;
+    state.relayConnected = false;
+    state.relayError = lastError || "relay probe failed";
+    return false;
+  })();
+
+  try {
+    return await state.relayProbePromise;
+  } finally {
+    state.relayProbePromise = null;
+  }
+}
+
+function ensureRelayPolling() {
+  state.fallbackHandle = clearTimer(state.fallbackHandle);
+  if (!state.pollHandle) {
+    state.pollHandle = window.setInterval(loadRelaySession, RELAY_POLL_MS);
+  }
+}
+
+function ensureFallbackPolling() {
+  if (state.fallbackHandle) {
+    return;
+  }
+
+  state.pollHandle = clearTimer(state.pollHandle);
+  state.fallbackHandle = window.setInterval(async () => {
+    const relayReady = await discoverRelay();
+    if (relayReady) {
+      await recoverRelay();
+      return;
+    }
+    await loadFallbackTranscript();
+  }, FALLBACK_POLL_MS);
 }
 
 async function loadRelaySession() {
@@ -282,15 +381,30 @@ async function loadRelaySession() {
 
     const payload = await response.json();
     state.relayEntries = Array.isArray(payload.entries) ? payload.entries : [];
+    state.relayConnected = true;
     renderThread();
     setConnectionState("live");
-  } catch {
+  } catch (error) {
     state.relayConnected = false;
+    state.relayError = formatRelayError(error, state.relayBase || RELAY_BASES[0]);
     setConnectionState("fallback");
     await loadFallbackTranscript();
+    ensureFallbackPolling();
   } finally {
     state.loading = false;
   }
+}
+
+async function recoverRelay() {
+  const relayReady = await discoverRelay();
+  if (!relayReady) {
+    return false;
+  }
+
+  setConnectionState("live");
+  await loadRelaySession();
+  ensureRelayPolling();
+  return true;
 }
 
 async function loadFallbackTranscript() {
@@ -317,32 +431,33 @@ function setConnectionState(mode) {
   const copy = document.getElementById("connection-copy");
   const hint = document.getElementById("composer-hint");
   const sendButton = document.getElementById("send-button");
+  const detail = state.relayError ? ` 최근 오류: ${state.relayError}` : "";
 
   chip.className = "connection-chip";
 
   if (mode === "live") {
     chip.classList.add("is-live");
-    chip.textContent = "같은 PC 실시간 연결";
-    copy.textContent = "localhost relay가 연결되어 이 채팅방에서 바로 명령을 보냅니다.";
-    hint.textContent = "전송하면 이 채팅방에 바로 올라가고, Codex 상태 칩과 짧은 답으로 돌아옵니다.";
+    chip.textContent = "실시간 연결";
+    copy.textContent = "localhost relay가 연결되어 이 채팅방에서 바로 Codex에게 전달됩니다.";
+    hint.textContent = "여기서 바로 명령을 보내면 상태와 결과가 이 대화방으로 돌아옵니다.";
     sendButton.disabled = false;
     return;
   }
 
   if (mode === "sending") {
     chip.classList.add("is-working");
-    chip.textContent = "보내는 중";
-    copy.textContent = "메시지를 로컬 relay로 전달하는 중";
-    hint.textContent = "전송 중입니다. 잠시만 기다리세요.";
+    chip.textContent = "전송 중";
+    copy.textContent = "메시지를 로컬 relay로 전달하는 중입니다.";
+    hint.textContent = "응답이 돌아올 때까지 잠시 기다려 주세요.";
     sendButton.disabled = true;
     return;
   }
 
   chip.classList.add("is-fallback");
-  chip.textContent = "읽기 전용 fallback";
-  copy.textContent = "localhost relay가 없어서 공개 GitHub 로그만 읽는 상태입니다.";
-  hint.textContent = "이 PC에서 relay가 켜져 있어야 진짜 채팅처럼 바로 전송됩니다.";
-  sendButton.disabled = true;
+  chip.textContent = "재연결 필요";
+  copy.textContent = `아직 localhost relay를 확인하지 못해 공개 GitHub 로그를 읽는 상태입니다.${detail}`;
+  hint.textContent = "이 탭을 다시 보고 있거나 전송을 누르면 relay를 즉시 다시 찾습니다.";
+  sendButton.disabled = false;
 }
 
 function renderEntry(entry) {
@@ -384,8 +499,10 @@ function renderThread() {
     thread.innerHTML = `
       <div class="welcome-card">
         <p class="welcome-kicker">${state.relayConnected ? "Live Chat" : "Read Only"}</p>
-        <strong>${state.relayConnected ? "여기서 바로 Codex에게 말하면 됩니다." : "relay가 없어서 아직 채팅방이 비어 있습니다."}</strong>
-        <p>${state.relayConnected ? "아래 입력창에 작업을 채팅처럼 보내면 이 대화방 안에서 상태와 결과를 받습니다." : "같은 PC에서 local chat relay가 켜지면 이 페이지가 진짜 채팅방처럼 동작합니다."}</p>
+        <strong>${state.relayConnected ? "여기서 바로 Codex에게 말하면 됩니다." : "relay 연결을 다시 확인하는 중입니다."}</strong>
+        <p>${state.relayConnected
+          ? "아래 입력창에 작업을 채팅처럼 보내면 상태와 결과를 같은 방에서 받습니다."
+          : "같은 PC의 localhost relay가 확인되면 이 페이지가 실시간 채팅방으로 전환됩니다."}</p>
       </div>
     `;
     return;
@@ -399,7 +516,7 @@ function renderThread() {
       <div class="status-lane">
         <div class="status-chip tone-review">
           <span class="status-dot"></span>
-          <span>relay가 없어 공개 GitHub 로그를 읽는 중입니다.</span>
+          <span>relay가 아직 연결되지 않아 공개 GitHub 기록을 읽는 중입니다.</span>
         </div>
       </div>
     `);
@@ -446,9 +563,12 @@ async function sendMessage(event) {
   }
 
   if (!state.relayConnected || !state.relayBase) {
-    setConnectionState("fallback");
-    renderThread();
-    return;
+    const recovered = await recoverRelay();
+    if (!recovered || !state.relayConnected || !state.relayBase) {
+      setConnectionState("fallback");
+      renderThread();
+      return;
+    }
   }
 
   state.sending = true;
@@ -473,7 +593,7 @@ async function sendMessage(event) {
     });
 
     if (!response.ok) {
-      throw new Error("message submit failed");
+      throw new Error(`message submit failed (${response.status})`);
     }
 
     document.getElementById("message").value = "";
@@ -481,13 +601,31 @@ async function sendMessage(event) {
     autoResizeTextarea();
     toggleTools(false);
     await loadRelaySession();
-  } catch {
+  } catch (error) {
     state.relayConnected = false;
+    state.relayError = formatRelayError(error, state.relayBase || RELAY_BASES[0]);
     await loadFallbackTranscript();
+    ensureFallbackPolling();
   } finally {
     state.sending = false;
     setConnectionState(state.relayConnected ? "live" : "fallback");
   }
+}
+
+function installRelayWakeHooks() {
+  const tryWakeRelay = async () => {
+    if (!state.relayConnected && !state.sending) {
+      await recoverRelay();
+    }
+  };
+
+  window.addEventListener("focus", tryWakeRelay);
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "visible") {
+      await tryWakeRelay();
+    }
+  });
+  document.getElementById("message").addEventListener("focus", tryWakeRelay);
 }
 
 async function bootstrap() {
@@ -533,30 +671,16 @@ async function bootstrap() {
   });
 
   autoResizeTextarea();
+  installRelayWakeHooks();
 
-  const relayReady = await discoverRelay();
+  const relayReady = await recoverRelay();
   if (relayReady) {
-    setConnectionState("live");
-    await loadRelaySession();
-    state.pollHandle = window.setInterval(loadRelaySession, RELAY_POLL_MS);
     return;
   }
 
   setConnectionState("fallback");
   await loadFallbackTranscript();
-  state.fallbackHandle = window.setInterval(async () => {
-    const relayNow = await discoverRelay();
-    if (relayNow) {
-      if (state.fallbackHandle) {
-        window.clearInterval(state.fallbackHandle);
-      }
-      setConnectionState("live");
-      await loadRelaySession();
-      state.pollHandle = window.setInterval(loadRelaySession, RELAY_POLL_MS);
-      return;
-    }
-    await loadFallbackTranscript();
-  }, FALLBACK_POLL_MS);
+  ensureFallbackPolling();
 }
 
 bootstrap();
