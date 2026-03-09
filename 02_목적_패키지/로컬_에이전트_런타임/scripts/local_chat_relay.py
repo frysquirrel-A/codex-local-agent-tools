@@ -14,10 +14,23 @@ from pathlib import Path
 HOST = "127.0.0.1"
 PORT = 8767
 CACHE_TTL_SECONDS = 2.0
+SCRIPT_ROOT = Path(__file__).resolve().parent
+PACKAGE_ROOT = SCRIPT_ROOT.parent
+PACKAGE_GROUP_ROOT = PACKAGE_ROOT.parent
+TOOL_ROOT = PACKAGE_GROUP_ROOT.parent
+DOCS_ROOT = TOOL_ROOT / "docs"
 TRUSTED_ORIGINS = {
     "https://frysquirrel-a.github.io",
     "https://frysquirrel-a.github.io/codex-local-agent-tools/",
+    "http://127.0.0.1:8767",
+    "http://localhost:8767",
     "null",
+}
+STATIC_FILES = {
+    "/": (DOCS_ROOT / "index.html", "text/html; charset=utf-8"),
+    "/index.html": (DOCS_ROOT / "index.html", "text/html; charset=utf-8"),
+    "/app.js": (DOCS_ROOT / "app.js", "application/javascript; charset=utf-8"),
+    "/styles.css": (DOCS_ROOT / "styles.css", "text/css; charset=utf-8"),
 }
 
 
@@ -376,6 +389,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path in STATIC_FILES:
+            path, content_type = STATIC_FILES[parsed.path]
+            if not path.exists():
+                self.write_json(404, {"ok": False, "error": f"Static file not found: {path.name}"})
+                return
+            raw = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+
         if parsed.path == "/status":
             payload = {
                 "ok": True,
@@ -383,6 +409,7 @@ class Handler(BaseHTTPRequestHandler):
                 "host": HOST,
                 "port": PORT,
                 "siteUrl": STATE.channel["siteUrl"],
+                "localUiUrl": f"http://{HOST}:{PORT}/",
                 "checkedAt": now_iso(),
             }
             self.write_json(200, payload)

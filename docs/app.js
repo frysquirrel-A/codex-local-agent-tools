@@ -555,8 +555,8 @@ function setConnectionState(mode) {
 
   chip.classList.add("is-fallback");
   chip.textContent = "재연결 필요";
-  copy.textContent = `아직 localhost relay를 확인하지 못해 공개 GitHub 로그를 읽는 상태입니다.${detail}`;
-  hint.textContent = "이 탭을 다시 보고 있거나 전송을 누르면 relay를 즉시 다시 찾습니다.";
+  copy.textContent = `아직 localhost relay를 확인하지 못해 공개 GitHub 로그를 읽는 상태입니다.${detail} 같은 PC에서는 http://127.0.0.1:8767/ 로 열면 바로 연결됩니다.`;
+  hint.textContent = "실시간 채팅은 이 PC에서 http://127.0.0.1:8767/ 를 열면 바로 사용할 수 있습니다.";
   sendButton.disabled = false;
 }
 
@@ -616,7 +616,7 @@ function renderThread() {
       <div class="status-lane">
         <div class="status-chip tone-review">
           <span class="status-dot"></span>
-          <span>relay가 아직 연결되지 않아 공개 GitHub 기록을 읽는 중입니다.</span>
+          <span>실시간 채팅은 http://127.0.0.1:8767/ 에서 바로 사용할 수 있습니다.</span>
         </div>
       </div>
     `);
