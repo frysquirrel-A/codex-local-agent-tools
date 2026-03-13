@@ -1,0 +1,29 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python / PowerShell transient
+__pycache__/
+*.pyc
+*.pyo
+*.tmp
+*.bak
+
+# Local one-off automation scratch files
+*_temp.ps1
+capture_rect_temp.ps1
+close_chrome_tab_temp.ps1
+navigate_chrome_window_temp.ps1
+open_gemini_window_temp.ps1
+
+# Local screenshots and ad-hoc captures
+*.png
+*.jpg
+*.jpeg
+
+# External convenience junctions
+브라우저_자동화/
+
+# Runtime caches and logs
+*.log

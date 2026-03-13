@@ -1,0 +1,9 @@
+요청: 메인 Codex, helper 스레드, 메시지 흐름, watchdog/스케줄러 상태를 다 볼 수 있는 Windows용 관제 프로그램 생성.
+
+프로젝트 경로:
+- [codex-control-center](C:\Users\Ryzen\Desktop\codex-agent\codex-control-center)
+
+핵심 파일:
+- [README.md](C:\Users\Ryzen\Desktop\codex-agent\codex-control-center\README.md)
+- [control_center_server.py](C:\Users\Ryzen\Desktop\codex-agent\codex-control-center\src\control_center_server.py)
+- [index.html](C:\Users\Ryzen\Desktop\codex-agent\codex-control-center\static\index.html)
