@@ -1,4 +1,5 @@
 param(
+    [string]$BindHost = "127.0.0.1",
     [int]$Port = 8787,
     [switch]$NoBrowser
 )
@@ -13,20 +14,21 @@ if (-not (Test-Path -LiteralPath $serverPath)) {
 }
 
 $process = Start-Process -FilePath "python" `
-    -ArgumentList @($serverPath, "--port", $Port) `
+    -ArgumentList @($serverPath, "--host", $BindHost, "--port", $Port) `
     -WorkingDirectory $projectRoot `
     -PassThru
 
 Start-Sleep -Seconds 2
 
 if (-not $NoBrowser) {
-    Start-Process "http://127.0.0.1:$Port"
+    Start-Process "http://$BindHost`:$Port"
 }
 
 [pscustomobject]@{
     ok = $true
     pid = $process.Id
+    host = $BindHost
     port = $Port
-    url = "http://127.0.0.1:$Port"
+    url = "http://$BindHost`:$Port"
     projectRoot = $projectRoot
 } | ConvertTo-Json -Depth 4
