@@ -1,95 +1,211 @@
-const byId = (id) => document.getElementById(id);
+﻿const byId = (id) => document.getElementById(id);
 const THEME_STORAGE_KEY = "codex-command-center-theme";
+const DRAFT_STORAGE_KEY = "codex-command-center-draft";
 
 const state = {
   snapshot: null,
-  optimisticMessages: [],
-  recording: false,
-  toasts: [],
-  lastRenderedMessageId: "",
-  isRefreshing: false,
-  refreshTimer: null,
-  activeTab: "home",
-  theme: "light",
   auth: {
     authenticated: false,
-    setupRequired: false,
-    codeOnly: true,
-    codeLabel: "접속 코드",
+    requiresLogin: false,
+    mode: "trusted-local",
     csrfToken: "",
     sessionExpiresAt: "",
+    message: "",
   },
+  theme: "light",
+  uiVersion: "",
+  toasts: [],
+  selectedMemberTitle: "[비서] 보고자",
+  selectedFlowId: "",
+  queueFilter: "all",
+  selectedTab: "board",
+  focusedBoardPane: "members",
+  expandedMemberGroups: {
+    secretary: true,
+    manager: false,
+    team1: false,
+    team2: false,
+    coop: false,
+    external: false,
+  },
+  refreshTimer: null,
+  isRefreshing: false,
+  recording: false,
+  inputComposing: false,
+  resourceHistory: {
+    cpu: [],
+    memory: [],
+    gpu: [],
+    quota: [],
+  },
+  lastRenderError: "",
 };
 
 const elements = {
+  authGate: byId("authGate"),
+  authForm: byId("authForm"),
+  authSubmit: byId("authSubmit"),
+  codeInput: byId("codeInput"),
+  authHint: byId("authHint"),
   generatedAt: byId("generatedAt"),
+  accessMode: byId("accessMode"),
   sessionExpiresAt: byId("sessionExpiresAt"),
+  syncState: byId("syncState"),
+  resourceUpdatedAt: byId("resourceUpdatedAt"),
+  cpuValue: byId("cpuValue"),
+  memoryValue: byId("memoryValue"),
+  gpuValue: byId("gpuValue"),
+  quotaValue: byId("quotaValue"),
+  cpuChart: byId("cpuChart"),
+  memoryChart: byId("memoryChart"),
+  gpuChart: byId("gpuChart"),
+  quotaChart: byId("quotaChart"),
+  logoutButton: byId("logoutButton"),
   themeToggle: byId("themeToggle"),
-  heroMetrics: byId("heroMetrics"),
+  summaryCards: byId("summaryCards"),
   globalBanner: byId("globalBanner"),
+  boardGrid: byId("boardGrid"),
+  boardPaneMembers: byId("boardPaneMembers"),
+  boardPaneQueue: byId("boardPaneQueue"),
+  boardPaneConversation: byId("boardPaneConversation"),
+  memberCount: byId("memberCount"),
+  memberMode: byId("memberMode"),
+  memberList: byId("memberList"),
+  orgTree: byId("orgTree"),
+  selectedMemberName: byId("selectedMemberName"),
+  selectedMemberStatus: byId("selectedMemberStatus"),
+  selectedMemberRole: byId("selectedMemberRole"),
+  selectedMemberStats: byId("selectedMemberStats"),
+  queueCount: byId("queueCount"),
+  queueFilters: byId("queueFilters"),
+  queueList: byId("queueList"),
+  progressRoute: byId("progressRoute"),
+  progressPanel: byId("progressPanel"),
+  reportFocus: byId("reportFocus"),
   chatLog: byId("chatLog"),
   composerForm: byId("composerForm"),
+  composerTargetTitle: byId("composerTargetTitle"),
+  composerTargetMeta: byId("composerTargetMeta"),
+  composerHint: byId("composerHint"),
   promptInput: byId("promptInput"),
   sendButton: byId("sendButton"),
   micButton: byId("micButton"),
+  directiveHistory: byId("directiveHistory"),
+  flowTimeline: byId("flowTimeline"),
+  reportLibrary: byId("reportLibrary"),
+  settingsPanel: byId("settingsPanel"),
   toastHost: byId("toastHost"),
-  overviewCards: byId("overviewCards"),
-  homeAlerts: byId("homeAlerts"),
-  homeFlows: byId("homeFlows"),
-  homeThreads: byId("homeThreads"),
-  conversationStatusCards: byId("conversationStatusCards"),
-  statusCards: byId("statusCards"),
-  statusDetails: byId("statusDetails"),
-  alerts: byId("alerts"),
-  messageFlows: byId("messageFlows"),
-  threadGrid: byId("threadGrid"),
-  paths: byId("paths"),
-  pathCards: byId("pathCards"),
-  messageTemplate: byId("messageTemplate"),
-  overviewCardTemplate: byId("overviewCardTemplate"),
-  alertTemplate: byId("alertTemplate"),
-  flowTemplate: byId("flowTemplate"),
-  threadTemplate: byId("threadTemplate"),
-  detailTemplate: byId("detailTemplate"),
   toastTemplate: byId("toastTemplate"),
-  authGate: byId("authGate"),
-  authTitle: byId("authTitle"),
-  authDescription: byId("authDescription"),
-  authHint: byId("authHint"),
-  authForm: byId("authForm"),
-  authSubmit: byId("authSubmit"),
-  authMode: byId("authMode"),
-  codeInput: byId("codeInput"),
-  logoutButton: byId("logoutButton"),
+  tabs: Array.from(document.querySelectorAll(".tab")),
+  panels: Array.from(document.querySelectorAll(".tab-panel")),
+  paneToggles: Array.from(document.querySelectorAll(".pane-head-toggle")),
 };
 
-const tabButtons = Array.from(document.querySelectorAll("[data-tab-target]"));
-const tabPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
-const jumpButtons = Array.from(document.querySelectorAll("[data-jump-tab]"));
-
-function formatTimestamp(value, options = {}) {
+function formatTimestamp(value) {
   if (!value) return "-";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
+  if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("ko-KR", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    ...options,
   }).format(date);
 }
 
-function autosizeTextarea() {
-  elements.promptInput.style.height = "auto";
-  elements.promptInput.style.height = `${Math.min(elements.promptInput.scrollHeight, 160)}px`;
+function parseTimestamp(value) {
+  if (!value) return 0;
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
-function makeMetricChip(label, value) {
-  const node = document.createElement("div");
-  node.className = "metric-chip";
-  node.innerHTML = `<span class="status-label">${label}</span><strong>${value}</strong>`;
-  return node;
+function formatPercent(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  return `${numeric.toFixed(numeric >= 10 ? 0 : 1)}%`;
+}
+
+function formatMemoryMb(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  if (numeric >= 1024) return `${(numeric / 1024).toFixed(1)} GB`;
+  return `${numeric.toFixed(0)} MB`;
+}
+
+function toneClassForLabel(value) {
+  const text = String(value || "").toLowerCase();
+  if (!text) return "tone-neutral";
+  if (text.includes("running") || text.includes("active") || text.includes("in progress")) return "tone-running";
+  if (text.includes("pending") || text.includes("waiting") || text.includes("hold")) return "tone-pending";
+  if (text.includes("queued") || text.includes("route") || text.includes("handoff") || text.includes("received") || text.includes("chatgpt")) return "tone-queued";
+  if (text.includes("complete") || text.includes("completed") || text.includes("closed") || text.includes("done")) return "tone-complete";
+  return "tone-neutral";
+}
+
+function pillHtml(baseClass, label, value = "", preferredTone = "") {
+  const tone = preferredTone || toneClassForLabel(label);
+  const text = [label, value].filter(Boolean).join(" ");
+  return `<span class="${baseClass} ${tone}">${text}</span>`;
+}
+
+function looksCorrupted(text) {
+  const value = String(text || "");
+  if (!value) return false;
+  const questionCount = (value.match(/\?/g) || []).length;
+  const replacementCharCount = value.includes("�") ? 1 : 0;
+  return replacementCharCount > 0 || value.includes("?") || questionCount >= Math.max(4, Math.floor(value.length * 0.18));
+}
+
+function safeLabel(text, fallback = "원문 복구 필요") {
+  const value = String(text || "").trim();
+  if (!value) return fallback;
+  return looksCorrupted(value) ? fallback : value;
+}
+
+function stripInternalRoutingPrefix(text) {
+  const value = String(text || "");
+  if (!value) return "";
+  return value
+    .replace(/^\s*\[대상:\s*.*?\[큐:[^\]]+\]\s*/u, "")
+    .replace(/^\s*\[대상:\s*.*?\]\s*/u, "")
+    .replace(/^\s*\[큐:\s*[^\]]+\]\s*/u, "")
+    .replace(/^\s*\[[^\]]*->[^\]]*\]\s*/u, "")
+    .trim();
+}
+
+function rewriteVisibleSystemText(text) {
+  const value = String(text || "");
+  if (!value) return "";
+  return value
+    .replace(
+      "명령을 접수했습니다. [관리자] 사장이 먼저 검토한 뒤, 직접 처리 또는 팀 위임을 결정합니다.",
+      "명령을 접수했습니다. [비서] 보고자가 먼저 정리하고 스킬 후보를 고른 뒤, [관리자] 사장이 직접 처리 또는 팀 위임을 결정합니다.",
+    )
+    .replace("[대표님 -> 관리자 접수]", "[대표님 -> 비서 접수]");
+}
+
+function extractRepresentativeDirective(text) {
+  const value = rewriteVisibleSystemText(String(text || ""));
+  if (!value) return "";
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const cleanedLines = [];
+  for (const line of lines) {
+    if (/^\[(대표님\s*->|비서 지침|관리자 지침|참고 큐|참고 대상)/u.test(line)) continue;
+    const cleaned = stripInternalRoutingPrefix(
+      line
+        .replace(/^\s*대표님 지시[:：]\s*/u, "")
+        .replace(/^\s*\[비서 보고\]\s*/u, "")
+        .trim(),
+    );
+    if (!cleaned) continue;
+    cleanedLines.push(cleaned);
+  }
+  if (cleanedLines.length) return cleanedLines[0];
+  return stripInternalRoutingPrefix(value);
 }
 
 function showToast(title, detail = "", timeoutMs = 4200) {
@@ -97,6 +213,35 @@ function showToast(title, detail = "", timeoutMs = 4200) {
   state.toasts.push({ id, title, detail });
   renderToasts();
   window.setTimeout(() => dismissToast(id), timeoutMs);
+}
+
+function recordClientError(error) {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error || "unknown error");
+  state.lastRenderError = message;
+  if (elements.syncState) {
+    elements.syncState.textContent = "?ъ뿰寃??꾩슂";
+    elements.syncState.className = "sync-stale";
+  }
+  showToast("?곹깭 媛깆떊 ?ㅽ뙣", message, 6000);
+  try {
+    console.error("[command-center]", message);
+  } catch {
+    // ignore
+  }
+  try {
+    fetch("/api/client-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        source: "browser",
+        href: window.location.href,
+        userAgent: navigator.userAgent,
+      }),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
 }
 
 function dismissToast(id) {
@@ -115,148 +260,63 @@ function renderToasts() {
   }
 }
 
-function smoothScrollToBottom(force = false) {
-  const shouldFollow =
-    force ||
-    elements.chatLog.scrollHeight - elements.chatLog.scrollTop - elements.chatLog.clientHeight < 160;
-  if (!shouldFollow) return;
-  window.requestAnimationFrame(() => {
-    elements.chatLog.scrollTo({
-      top: elements.chatLog.scrollHeight,
-      behavior: "smooth",
-    });
-  });
-}
-
-function stopRefreshLoop() {
-  if (state.refreshTimer) {
-    window.clearInterval(state.refreshTimer);
-    state.refreshTimer = null;
-  }
-}
-
-function startRefreshLoop() {
-  if (state.refreshTimer) return;
-  state.refreshTimer = window.setInterval(refreshSnapshot, 5000);
-}
-
-function readTabFromLocation() {
-  const raw = window.location.hash.replace(/^#/, "").trim();
-  const known = new Set(["home", "conversation", "status", "flows", "threads"]);
-  return known.has(raw) ? raw : "home";
-}
-
 function readPreferredTheme() {
   try {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === "dark" || saved === "light") {
-      return saved;
-    }
+    if (saved === "dark" || saved === "light") return saved;
   } catch {
-    // Ignore localStorage access issues and fall back to system preference.
+    // ignore
   }
-
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function applyTheme(theme, { persist = true } = {}) {
   state.theme = theme === "dark" ? "dark" : "light";
   document.body.dataset.theme = state.theme;
-
-  if (elements.themeToggle) {
-    const pressed = state.theme === "dark";
-    elements.themeToggle.setAttribute("aria-pressed", pressed ? "true" : "false");
-    const stateNode = elements.themeToggle.querySelector(".theme-toggle-state");
-    if (stateNode) {
-      stateNode.textContent = pressed ? "On" : "Off";
-    }
-  }
-
+  elements.themeToggle.setAttribute("aria-pressed", state.theme === "dark" ? "true" : "false");
+  elements.themeToggle.textContent = state.theme === "dark" ? "二쇨컙 紐⑤뱶" : "?쇨컙 紐⑤뱶";
   if (!persist) return;
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, state.theme);
   } catch {
-    // Ignore localStorage access issues.
+    // ignore
   }
 }
 
-function toggleTheme() {
-  const next = state.theme === "dark" ? "light" : "dark";
-  applyTheme(next);
-  showToast(
-    next === "dark" ? "?쇨컙 紐⑤뱶 耳쒖쭅" : "?쇨컙 紐⑤뱶 醫낅즺",
-    next === "dark" ? "?댁두 ?쇱긽 ?뚯뒪濡?諛붽퓭 ?쒖빞 ?덊뵾濡쒕? ?쟾?섑했습니다." : "?묒? ?뚯뒪濡?蹂듭썝?섏뿬 ?쇰갑 ?댁쁺 ?붾뱶濡??뚮┰?덈떎.",
-    2200,
-  );
-}
-
-function setActiveTab(tabName, { updateHistory = true } = {}) {
-  state.activeTab = tabName;
-  for (const button of tabButtons) {
-    button.classList.toggle("active", button.dataset.tabTarget === tabName);
-  }
-  for (const panel of tabPanels) {
-    const active = panel.dataset.tabPanel === tabName;
-    panel.hidden = !active;
-    panel.classList.toggle("active", active);
-  }
-  if (updateHistory && window.location.hash !== `#${tabName}`) {
-    window.history.replaceState(null, "", `#${tabName}`);
+function saveDraft(value) {
+  try {
+    window.localStorage.setItem(DRAFT_STORAGE_KEY, value || "");
+  } catch {
+    // ignore
   }
 }
 
-function resetAuthState() {
-  state.auth = {
-    authenticated: false,
-    setupRequired: false,
-    codeOnly: true,
-    codeLabel: "접속 코드",
-    csrfToken: "",
-    sessionExpiresAt: "",
-  };
+function loadDraft() {
+  try {
+    return window.localStorage.getItem(DRAFT_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
 }
 
-function renderAuthGate() {
-  const auth = state.auth;
-  const authenticated = Boolean(auth.authenticated);
-  document.body.classList.toggle("auth-locked", !authenticated);
-  elements.authGate.hidden = authenticated;
-  elements.logoutButton.hidden = !authenticated;
-  elements.promptInput.disabled = !authenticated;
-  elements.sendButton.disabled = !authenticated;
-  elements.micButton.disabled = !authenticated;
-  elements.sessionExpiresAt.textContent = authenticated
-    ? formatTimestamp(auth.sessionExpiresAt)
-    : "-";
-
-  if (authenticated) {
-    elements.authMode.textContent = "Protected";
-    elements.codeInput.value = "";
-    return;
-  }
-
-  elements.authMode.textContent = "Code Only";
-  elements.authTitle.textContent = "접속 코드로 로그인";
-  elements.authDescription.textContent =
-    "지금부터는 비밀번호 없이 접속 코드 하나로 로그인합니다. 세션 쿠키, CSRF 보호, 로그인 시도 제한은 그대로 유지됩니다.";
-  elements.authHint.textContent =
-    "데스크톱에서 발급된 접속 코드를 입력해 주세요. 로그인 후에는 탭 기반 Command Center를 사용할 수 있습니다.";
-  elements.authSubmit.textContent = "들어가기";
+function autosizeTextarea() {
+  elements.promptInput.style.height = "auto";
+  elements.promptInput.style.height = `${Math.min(elements.promptInput.scrollHeight, 280)}px`;
 }
 
 async function fetchJson(url, options = {}, { includeCsrf = false } = {}) {
   const headers = new Headers(options.headers || {});
   if (options.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+    headers.set("Content-Type", "application/json; charset=utf-8");
   }
-  if (includeCsrf && state.auth.csrfToken) {
+  if (includeCsrf && state.auth.csrfToken && state.auth.mode === "remote-code") {
     headers.set("X-CSRF-Token", state.auth.csrfToken);
   }
   const response = await fetch(url, {
     ...options,
     headers,
-    cache: "no-store",
     credentials: "same-origin",
+    cache: "no-store",
   });
 
   let payload = {};
@@ -267,501 +327,1003 @@ async function fetchJson(url, options = {}, { includeCsrf = false } = {}) {
   }
 
   if (response.status === 401) {
-    resetAuthState();
-    stopRefreshLoop();
+    state.auth.authenticated = false;
     renderAuthGate();
-    throw new Error(payload.detail || payload.error || "로그인이 필요합니다.");
+    throw new Error(payload.detail || "?묒냽 肄붾뱶 濡쒓렇?몄씠 ?꾩슂?⑸땲??");
   }
-
   if (!response.ok || payload.ok === false) {
     throw new Error(payload.detail || payload.error || `request failed: ${response.status}`);
   }
-
   return payload;
 }
 
-async function syncAuthState() {
-  const authState = await fetchJson("/api/auth/state");
-  state.auth = {
-    authenticated: Boolean(authState.authenticated),
-    setupRequired: Boolean(authState.setupRequired),
-    codeOnly: authState.codeOnly !== false,
-    codeLabel: authState.codeLabel || "접속 코드",
-    csrfToken: authState.csrfToken || "",
-    sessionExpiresAt: authState.sessionExpiresAt || "",
-  };
-  renderAuthGate();
-  if (state.auth.authenticated) {
-    startRefreshLoop();
-  } else {
-    stopRefreshLoop();
-  }
+function getThreads() {
+  return Array.isArray(state.snapshot?.threads) ? state.snapshot.threads : [];
 }
 
-function mergeConversation() {
-  const snapshotConversation = Array.isArray(state.snapshot?.conversation)
-    ? state.snapshot.conversation
-    : [];
-  const merged = [...snapshotConversation];
-  const known = new Set(snapshotConversation.map((item) => item.id));
+function groupKeyForThread(thread) {
+  const name = String(thread?.displayName || thread?.title || "");
+  if (name === "[비서] 보고자") return "secretary";
+  if (name === "[관리자] 사장") return "manager";
+  if (name.startsWith("[1팀]")) return "team1";
+  if (name.startsWith("[2팀]")) return "team2";
+  if (name.startsWith("[협력")) return "coop";
+  return "external";
+}
 
-  for (const optimistic of state.optimisticMessages) {
-    if (!known.has(optimistic.id)) {
-      merged.push(optimistic);
+function expandGroupForMember(title) {
+  const thread = getThreads().find((item) => (item.displayName || item.title) === title);
+  if (!thread) return;
+  state.expandedMemberGroups[groupKeyForThread(thread)] = true;
+}
+
+function buildMemberCard(thread, groupKey = "") {
+  const title = thread.displayName || thread.title;
+  const activity = getMemberActivity(thread);
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = `member-card${title === state.selectedMemberTitle ? " active" : ""}`;
+  node.innerHTML = `
+    <div class="member-card-header">
+      <div class="member-card-header-main">
+        <div class="member-title-row">
+          <span class="member-title">${title}</span>
+          <span class="member-activity ${activity.tone}">${activity.label}</span>
+        </div>
+      </div>
+      <span class="member-tag tone-neutral">${thread.kind === "main" ? "관리" : thread.kind === "helper" ? "실무" : "외부"}</span>
+    </div>
+  `;
+  node.addEventListener("click", () => {
+    state.selectedMemberTitle = title;
+    state.selectedFlowId = "";
+    if (groupKey) {
+      state.expandedMemberGroups[groupKey] = true;
+    }
+    renderWorkspace();
+  });
+  return node;
+}
+
+function renderOrgTree(threads) {
+  if (!elements.orgTree) return;
+  const secretary = threads.find((item) => (item.displayName || item.title) === "[비서] 보고자");
+  const manager = threads.find((item) => (item.displayName || item.title) === "[관리자] 사장");
+  const team1 = threads.filter((item) => String(item.displayName || "").startsWith("[1팀]"));
+  const team2 = threads.filter((item) => String(item.displayName || "").startsWith("[2팀]"));
+  const coop = threads.filter((item) => String(item.displayName || "").startsWith("[협력"));
+  const external = threads.filter((item) => {
+    const name = String(item.displayName || "");
+    return !name.startsWith("[") || name.startsWith("[외부]");
+  });
+  const sections = [
+    { label: "[1팀] 실행 조직", items: team1 },
+    { label: "[2팀] 전략 조직", items: team2 },
+    { label: "[협력] 전문 지원", items: coop },
+    { label: "[외부] 연결 채널", items: external },
+  ].filter((section) => section.items.length);
+
+  const renderLeaf = (thread) => {
+    const title = safeLabel(thread.displayName || thread.title, "이름 복구 필요");
+    const activity = getMemberActivity(thread);
+    return `
+      <button class="tree-leaf" type="button" data-tree-member="${title}">
+        <span class="tree-leaf-name">${title}</span>
+        <span class="tree-leaf-state ${activity.tone}">${activity.label}</span>
+      </button>
+    `;
+  };
+
+  elements.orgTree.innerHTML = `
+    <section class="org-tree-root">
+      <div class="tree-node tree-root">
+        <div class="tree-label tree-label-root">대표님</div>
+      </div>
+      <div class="tree-trunk">
+        <button class="tree-leaf tree-leaf-primary" type="button" data-tree-member="${secretary ? safeLabel(secretary.displayName || secretary.title, "[비서] 보고자") : "[비서] 보고자"}">
+          <span class="tree-leaf-name">${secretary ? safeLabel(secretary.displayName || secretary.title, "[비서] 보고자") : "[비서] 보고자"}</span>
+          <span class="tree-leaf-state ${getMemberActivity(secretary).tone}">${getMemberActivity(secretary).label}</span>
+        </button>
+        <button class="tree-leaf tree-leaf-primary" type="button" data-tree-member="${manager ? safeLabel(manager.displayName || manager.title, "[관리자] 사장") : "[관리자] 사장"}">
+          <span class="tree-leaf-name">${manager ? safeLabel(manager.displayName || manager.title, "[관리자] 사장") : "[관리자] 사장"}</span>
+          <span class="tree-leaf-state ${getMemberActivity(manager).tone}">${getMemberActivity(manager).label}</span>
+        </button>
+      </div>
+      <div class="tree-branches">
+        ${sections
+          .map(
+            (section) => `
+              <article class="tree-branch">
+                <div class="tree-label tree-label-branch">${section.label}</div>
+                <div class="tree-leaves">
+                  ${section.items.map((thread) => renderLeaf(thread)).join("")}
+                </div>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+
+  elements.orgTree.querySelectorAll("[data-tree-member]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const title = node.getAttribute("data-tree-member") || "";
+      state.selectedMemberTitle = title;
+      state.selectedFlowId = "";
+      renderWorkspace();
+    });
+  });
+}
+
+function getFlows() {
+  return Array.isArray(state.snapshot?.messageFlows) ? state.snapshot.messageFlows : [];
+}
+
+function getConversation() {
+  return Array.isArray(state.snapshot?.conversation) ? state.snapshot.conversation : [];
+}
+
+function topicTitleForItem(item) {
+  return safeLabel(item?.topicTitle || item?.meta?.topicTitle || "", "일반 운영");
+}
+
+function topicIdForItem(item) {
+  return String(item?.topicId || item?.meta?.topicId || topicTitleForItem(item));
+}
+
+function groupItemsByTopic(items) {
+  const groups = [];
+  const lookup = new Map();
+  for (const item of items) {
+    const topicId = topicIdForItem(item);
+    const topicTitle = topicTitleForItem(item);
+    if (!lookup.has(topicId)) {
+      const group = { topicId, topicTitle, items: [] };
+      lookup.set(topicId, group);
+      groups.push(group);
+    }
+    lookup.get(topicId).items.push(item);
+  }
+  return groups;
+}
+
+function visibleReportLinks(report) {
+  const links = Array.isArray(report?.links) ? report.links : [];
+  return links.filter((link) => String(link?.kind || "").toLowerCase() !== "pdf");
+}
+
+function normalizeMemberTitle(title) {
+  const text = String(title || "").trim();
+  if (!text || text.includes("???") || text.includes("[???]") || text.includes("[愿")) {
+    return "[비서] 보고자";
+  }
+  return text;
+}
+
+function selectedMember() {
+  state.selectedMemberTitle = normalizeMemberTitle(state.selectedMemberTitle);
+  return getThreads().find((item) => item.displayName === state.selectedMemberTitle || item.title === state.selectedMemberTitle) || null;
+}
+
+function getAssignmentState(assignment) {
+  const status = String(assignment?.status || "").trim().toLowerCase();
+  const step = String(assignment?.step || "").trim().toLowerCase();
+  if (["completed", "done", "closed", "failed", "abandoned", "cancelled", "canceled", "skipped", "superseded"].includes(status)) {
+    return "closed";
+  }
+  if (["queued", "pending", "accepted", "assigned"].includes(status)) {
+    return "waiting";
+  }
+  if (["in_progress", "running", "working"].includes(status)) {
+    return "active";
+  }
+  if (["feedback_received"].includes(step) || ["feedback_received"].includes(status)) {
+    return "closed";
+  }
+  return assignment ? "active" : "idle";
+}
+
+function getMemberActivity(member) {
+  const title = member?.displayName || member?.title || "";
+  if (!title) return { tone: "idle", label: "대기", detail: "" };
+  const queueItems = memberQueueItems(member);
+  if (!queueItems.length) {
+    return { tone: "idle", label: "대기", detail: "현재 맡은 일이 없습니다." };
+  }
+
+  let activeCount = 0;
+  let waitingCount = 0;
+  let closedCount = 0;
+  for (const flow of queueItems) {
+    const assignments = Array.isArray(flow.assignments) ? flow.assignments : [];
+    if (title === "[관리자] 사장" || title === "[비서] 보고자") {
+      if (assignments.some((item) => getAssignmentState(item) !== "closed")) {
+        activeCount += 1;
+      } else {
+        waitingCount += 1;
+      }
+      continue;
+    }
+    const matched = assignments.filter((item) => item.helperTitle === title);
+    if (!matched.length) continue;
+    for (const assignment of matched) {
+      const stateName = getAssignmentState(assignment);
+      if (stateName === "active") activeCount += 1;
+      else if (stateName === "waiting") waitingCount += 1;
+      else if (stateName === "closed") closedCount += 1;
     }
   }
 
-  merged.sort((a, b) => {
-    const at = new Date(a.createdAt || 0).getTime();
-    const bt = new Date(b.createdAt || 0).getTime();
-    if (at !== bt) return at - bt;
-    return String(a.id || "").localeCompare(String(b.id || ""));
-  });
-
-  return merged;
+  if (activeCount > 0) {
+    return { tone: "active", label: "일 중", detail: `${activeCount}건 진행 중` };
+  }
+  if (waitingCount > 0) {
+    return { tone: "waiting", label: "대기 중", detail: `${waitingCount}건 대기 중` };
+  }
+  if (closedCount > 0) {
+    return { tone: "idle", label: "최근 완료", detail: `${closedCount}건 완료` };
+  }
+  return { tone: "idle", label: "대기", detail: "현재 맡은 일이 없습니다." };
 }
 
-function normalizeMessageKind(message) {
-  if (message.role === "system") return "system";
-  if (message.kind === "warning") return "warning";
-  return message.role || "assistant";
+function memberQueueItems(member) {
+  const title = member?.displayName || member?.title || "";
+  if (!title) return [];
+  if (title === "[비서] 보고자" || title === "[관리자] 사장" || title === "[愿由ъ옄] ?ъ옣") return getFlows();
+  return getFlows().filter((flow) => {
+    if (flow.sourceTitle === title) return true;
+    return Array.isArray(flow.assignments) && flow.assignments.some((entry) => entry.helperTitle === title);
+  });
+}
+
+function selectedFlow(member) {
+  const items = memberQueueItems(member);
+  if (!items.length) return null;
+  return items.find((item) => item.handoffId === state.selectedFlowId) || items[0];
+}
+
+function flowStateForMember(flow, member) {
+  if (!flow || !member) return "waiting";
+  const title = member.displayName || member.title || "";
+  const assignments = Array.isArray(flow.assignments) ? flow.assignments : [];
+  const relevant = title === "[관리자] 사장" || title === "[비서] 보고자"
+    ? assignments
+    : assignments.filter((entry) => entry.helperTitle === title);
+
+  if (!relevant.length) {
+    return title === "[관리자] 사장" || title === "[비서] 보고자" ? "waiting" : "closed";
+  }
+  if (relevant.some((entry) => getAssignmentState(entry) === "active")) return "active";
+  if (relevant.some((entry) => getAssignmentState(entry) === "waiting")) return "waiting";
+  return "closed";
+}
+
+function setActiveTab(tabId) {
+  state.selectedTab = tabId;
+  elements.tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === tabId));
+  elements.panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === tabId));
+}
+
+function buildSummaryCards() {
+  const overview = state.snapshot?.overview || {};
+  const cards = [
+    {
+      label: "비서 · 사장",
+      value: "선접수 · 기술선별 · 최종 실행",
+      detail: "비서가 먼저 접수하고 스킬과 요약을 고른 뒤, 사장이 직접 처리 또는 팀 위임을 결정합니다.",
+    },
+    {
+      label: "1팀",
+      value: `${overview.helpers?.pendingAssignmentCount ?? 0}건 배정 추적`,
+      detail: "실행 계열 진단, 준비, 검증을 맡습니다.",
+    },
+    {
+      label: "2팀",
+      value: `${overview.scheduler?.openJobCount ?? 0}건 오픈`,
+      detail: "구조, 큐, 정리, 보고 흐름을 맡습니다.",
+    },
+    {
+      label: "협력",
+      value: `${getThreads().filter((item) => String(item.displayName || "").startsWith("[협력")).length}개 전문 채널`,
+      detail: "메일, KVM, 런타임, 큐 같은 공통 업무를 지원합니다.",
+    },
+  ];
+
+  elements.summaryCards.innerHTML = "";
+  for (const card of cards) {
+    const node = document.createElement("article");
+    node.className = "summary-card";
+    node.innerHTML = `
+      <p class="eyebrow">${card.label}</p>
+      <strong>${card.value}</strong>
+      <p class="queue-subtitle">${card.detail}</p>
+    `;
+    elements.summaryCards.appendChild(node);
+  }
+}
+
+function renderBanner() {
+  const alerts = Array.isArray(state.snapshot?.alerts) ? state.snapshot.alerts : [];
+  if (!alerts.length) {
+    elements.globalBanner.hidden = true;
+    elements.globalBanner.textContent = "";
+    return;
+  }
+  const alert = alerts[0];
+  elements.globalBanner.hidden = false;
+  elements.globalBanner.textContent = `${alert.title}: ${alert.detail}`;
+}
+
+function pushResourceSample(bucket, value) {
+  const list = state.resourceHistory[bucket];
+  if (!Array.isArray(list)) return;
+  const numeric = Number(value);
+  list.push(Number.isFinite(numeric) ? numeric : 0);
+  while (list.length > 24) {
+    list.shift();
+  }
+}
+
+function renderMiniChart(target, samples, maxValue) {
+  if (!target) return;
+  const values = Array.isArray(samples) ? samples.slice(-24) : [];
+  const upperBound = Math.max(1, Number(maxValue) || 1, ...values);
+  target.innerHTML = "";
+  const padded = new Array(Math.max(0, 24 - values.length)).fill(null).concat(values);
+  for (const sample of padded) {
+    const bar = document.createElement("span");
+    bar.className = `mini-bar${sample === null ? " empty" : ""}`;
+    const ratio = sample === null ? 0.08 : Math.max(0.08, Math.min(1, Number(sample || 0) / upperBound));
+    bar.style.height = `${Math.round(ratio * 100)}%`;
+    target.appendChild(bar);
+  }
+}
+
+function renderResourceCard() {
+  const resource = state.snapshot?.overview?.resources || {};
+  const cpuPercent = Number(resource.cpuPercent || 0);
+  const cpuClockGhz = Number(resource.cpuClockGhz || 0);
+  const memoryPercent = Number(resource.memoryLoadPercent || 0);
+  const gpu = resource.gpu || {};
+  const quota = resource.codexQuota || {};
+  const gpuPercent = Number(gpu.gpuPercent || 0);
+  const gpuMemoryUsedMb = Number(gpu.memoryUsedMb || 0);
+  const gpuMemoryTotalMb = Number(gpu.memoryTotalMb || 0);
+  const quotaPercent = Number.isFinite(Number(quota.remainingPercent)) ? Number(quota.remainingPercent) : 0;
+
+  pushResourceSample("cpu", cpuPercent);
+  pushResourceSample("memory", memoryPercent);
+  pushResourceSample("gpu", gpuPercent);
+  pushResourceSample("quota", quotaPercent);
+
+  elements.resourceUpdatedAt.textContent = formatTimestamp(gpu.updatedAt || quota.updatedAt || resource.updatedAt);
+  elements.cpuValue.textContent = cpuClockGhz > 0 ? `${formatPercent(cpuPercent)} / ${cpuClockGhz.toFixed(2)} GHz` : formatPercent(cpuPercent);
+  elements.memoryValue.textContent = `${formatPercent(memoryPercent)} / ${formatMemoryMb(resource.usedPhysicalMb || 0)}`;
+  elements.gpuValue.textContent = gpu.available
+    ? `${formatPercent(gpuPercent)} / ${formatMemoryMb(gpuMemoryUsedMb)}`
+    : "미감지";
+  elements.quotaValue.textContent = quota.available
+    ? `${formatPercent(quotaPercent)}`
+    : (quota.label || "미연동");
+
+  renderMiniChart(elements.cpuChart, state.resourceHistory.cpu, 100);
+  renderMiniChart(elements.memoryChart, state.resourceHistory.memory, 100);
+  renderMiniChart(elements.gpuChart, state.resourceHistory.gpu, 100);
+  renderMiniChart(elements.quotaChart, state.resourceHistory.quota, 100);
+}
+
+function renderMembers() {
+  const threads = getThreads();
+  elements.memberCount.textContent = `${threads.length}명`;
+  elements.memberList.innerHTML = "";
+  renderOrgTree(threads);
+  const focusMembers = state.focusedBoardPane === "members";
+  if (elements.boardPaneMembers) {
+    elements.boardPaneMembers.classList.toggle("tree-mode", focusMembers);
+  }
+  if (elements.memberMode) {
+    elements.memberMode.textContent = focusMembers ? "트리 보기" : "카드 보기";
+  }
+  if (elements.orgTree) {
+    elements.orgTree.hidden = !focusMembers;
+  }
+  elements.memberList.hidden = focusMembers;
+  const secretary = threads.find((item) => item.displayName === "[비서] 보고자");
+  const manager = threads.find((item) => item.displayName === "[관리자] 사장");
+  if (secretary) {
+    elements.memberList.appendChild(buildMemberCard(secretary, "secretary"));
+  }
+  if (manager) {
+    elements.memberList.appendChild(buildMemberCard(manager));
+  }
+  const groups = [
+    {
+      key: "team1",
+      label: "[1팀] 실행 조직",
+      items: threads.filter((item) => String(item.displayName).startsWith("[1팀]")),
+    },
+    {
+      key: "team2",
+      label: "[2팀] 전략 조직",
+      items: threads.filter((item) => String(item.displayName).startsWith("[2팀]")),
+    },
+    {
+      key: "coop",
+      label: "[협력] 전문 지원",
+      items: threads.filter((item) => String(item.displayName).startsWith("[협력")),
+    },
+    {
+      key: "external",
+      label: "[외부] 연결 채널",
+      items: threads.filter((item) => !String(item.displayName).startsWith("[")),
+    },
+  ];
+
+  for (const group of groups) {
+    if (!group.items.length) continue;
+    const totals = group.items.reduce(
+      (acc, item) => {
+        const stats = item.stats || {};
+        acc.queued += Number(stats.queued || 0);
+        acc.running += Number(stats.running || 0);
+        acc.pending += Number(stats.pending || 0);
+        return acc;
+      },
+      { queued: 0, running: 0, pending: 0 }
+    );
+    const isExpanded = !!state.expandedMemberGroups[group.key];
+    const section = document.createElement("section");
+    section.className = `member-group-card${isExpanded ? " expanded" : ""}`;
+    section.innerHTML = `
+      <button class="member-group-toggle" type="button" aria-expanded="${isExpanded}">
+        <div class="member-group-copy">
+          <p class="member-group-title">${group.label}</p>
+        </div>
+        <div class="member-group-meta">
+          <span class="member-group-count">${group.items.length}명</span>
+          <span class="member-group-summary">일중 ${totals.running} · 대기중 ${totals.queued + totals.pending}</span>
+          <span class="member-group-chevron" aria-hidden="true">${isExpanded ? "−" : "+"}</span>
+        </div>
+      </button>
+      <div class="member-group-body"></div>
+    `;
+    const toggle = section.querySelector(".member-group-toggle");
+    const body = section.querySelector(".member-group-body");
+    if (!(toggle instanceof HTMLElement) || !(body instanceof HTMLElement)) {
+      elements.memberList.appendChild(section);
+      continue;
+    }
+    toggle.addEventListener("click", () => {
+      state.expandedMemberGroups[group.key] = !state.expandedMemberGroups[group.key];
+      renderMembers();
+    });
+
+    for (const thread of group.items) {
+      body.appendChild(buildMemberCard(thread, group.key));
+    }
+    elements.memberList.appendChild(section);
+  }
+}
+
+function renderDirectiveHistory() {
+  if (!elements.directiveHistory) return;
+  const directives = getConversation()
+    .filter((item) => item.role === "user")
+    .sort((left, right) => parseTimestamp(right.createdAt) - parseTimestamp(left.createdAt))
+    .slice(0, 6);
+  if (!directives.length) {
+    elements.directiveHistory.innerHTML = `<div class="detail-empty">최근 지시 이력은 아직 없습니다.</div>`;
+    return;
+  }
+  const groups = groupItemsByTopic(directives);
+  elements.directiveHistory.innerHTML = `
+    <div class="directive-history-head">
+      <h3>최근 지시</h3>
+      <span>${directives.length}건</span>
+    </div>
+    <div class="directive-history-list topic-stack">
+      ${groups
+        .map(
+          (group) => `
+            <section class="topic-group">
+              <div class="topic-group-head">
+                <strong>${group.topicTitle}</strong>
+                <span>${group.items.length}건</span>
+              </div>
+              <div class="topic-group-list">
+                ${group.items
+                  .map(
+                    (message) => `
+                      <article class="directive-history-card">
+                        <div class="directive-history-meta">대표님 지시 · ${formatTimestamp(message.createdAt)}</div>
+                        <div class="directive-history-text">${safeLabel(extractRepresentativeDirective(message.text), "원문 복구 필요")}</div>
+                      </article>
+                    `,
+                  )
+                  .join("")}
+              </div>
+            </section>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderBoardPaneFocus() {
+  if (!elements.boardGrid) return;
+  const focus = state.focusedBoardPane || "";
+  elements.boardGrid.dataset.focus = focus;
+  const panes = [
+    elements.boardPaneMembers,
+    elements.boardPaneQueue,
+    elements.boardPaneConversation,
+  ];
+  for (const pane of panes) {
+    if (!(pane instanceof HTMLElement)) continue;
+    const isFocused = focus && pane.dataset.pane === focus;
+    const isDimmed = focus && pane.dataset.pane !== focus;
+    pane.classList.toggle("is-focused", Boolean(isFocused));
+    pane.classList.toggle("is-dimmed", Boolean(isDimmed));
+  }
+  for (const toggle of elements.paneToggles) {
+    const paneName = toggle.dataset.paneToggle || "";
+    toggle.setAttribute("aria-expanded", focus === paneName ? "true" : "false");
+  }
+}
+
+function renderMemberSummary(member) {
+  if (!member) return;
+  const items = memberQueueItems(member);
+  const active = selectedFlow(member);
+  const activity = getMemberActivity(member);
+  elements.selectedMemberName.textContent = member.displayName || member.title;
+  if (elements.selectedMemberRole) {
+    elements.selectedMemberRole.textContent = "";
+  }
+  elements.selectedMemberStatus.textContent = active
+    ? `${activity.label} · ${active.routeLabel || active.route || "진행 중"}`
+    : `${activity.label}${activity.detail ? ` 쨌 ${activity.detail}` : ""}`;
+  elements.selectedMemberStats.innerHTML = "";
+  const stats = items.reduce(
+    (acc, flow) => {
+      const stateName = flowStateForMember(flow, member);
+      acc.all += 1;
+      if (stateName === "active") acc.active += 1;
+      else if (stateName === "waiting") acc.waiting += 1;
+      else acc.closed += 1;
+      return acc;
+    },
+    { all: 0, active: 0, waiting: 0, closed: 0 },
+  );
+  const chips = [
+    ["전체", `${stats.all}건`],
+    ["진행중", `${stats.active}`],
+    ["대기중", `${stats.waiting}`],
+    ["완료", `${stats.closed}`],
+  ];
+  for (const [label, value] of chips) {
+    const node = document.createElement("span");
+    node.className = `stat-pill ${toneClassForLabel(label)}`;
+    node.textContent = `${label} ${value}`;
+    elements.selectedMemberStats.appendChild(node);
+  }
+}
+
+function renderQueueList(member) {
+  const items = memberQueueItems(member);
+  const filterOptions = [
+    { key: "all", label: "전체" },
+    { key: "active", label: "진행중" },
+    { key: "waiting", label: "대기중" },
+    { key: "closed", label: "완료" },
+  ];
+  const counts = items.reduce(
+    (acc, flow) => {
+      const stateName = flowStateForMember(flow, member);
+      acc.all += 1;
+      acc[stateName] += 1;
+      return acc;
+    },
+    { all: 0, active: 0, waiting: 0, closed: 0 },
+  );
+  if (elements.queueFilters) {
+    elements.queueFilters.innerHTML = filterOptions
+      .map((option) => {
+        const activeClass = state.queueFilter === option.key ? " active" : "";
+        return `
+          <button class="queue-filter${activeClass}" type="button" data-filter="${option.key}">
+            <span>${option.label}</span>
+            <strong>${counts[option.key] ?? 0}</strong>
+          </button>
+        `;
+      })
+      .join("");
+    elements.queueFilters.querySelectorAll("[data-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.queueFilter = button.getAttribute("data-filter") || "all";
+        renderQueueList(member);
+      });
+    });
+  }
+  const visibleItems = items.filter((flow) => state.queueFilter === "all" || flowStateForMember(flow, member) === state.queueFilter);
+  elements.queueCount.textContent = `${visibleItems.length}건`;
+  elements.queueList.innerHTML = "";
+  if (!visibleItems.length) {
+    elements.queueList.innerHTML = `<div class="queue-empty">선택한 구성원에게 연결된 현재 큐가 없습니다.</div>`;
+    return;
+  }
+  const active = selectedFlow(member);
+  state.selectedFlowId = active?.handoffId || "";
+  for (const flow of visibleItems) {
+    const flowState = flowStateForMember(flow, member);
+    const node = document.createElement("button");
+    node.type = "button";
+    node.className = `queue-card${flow.handoffId === state.selectedFlowId ? " active" : ""}`;
+    node.innerHTML = `
+      <div class="queue-meta-row">
+        ${pillHtml("queue-chip", flow.topicTitle || "일반 운영", "", "tone-neutral")}
+        ${pillHtml("queue-chip", flow.routeLabel || flow.route || "-", "", "tone-queued")}
+        ${pillHtml("queue-chip", flowState === "active" ? "진행중" : flowState === "waiting" ? "대기중" : "완료", "", flowState === "active" ? "tone-running" : flowState === "waiting" ? "tone-pending" : "tone-complete")}
+        ${pillHtml("queue-chip", formatTimestamp(flow.createdAt), "", "tone-neutral")}
+        ${pillHtml("queue-chip", "배정", `${Array.isArray(flow.assignments) ? flow.assignments.length : 0}`, "tone-neutral")}
+      </div>
+      <div class="queue-card-title">${safeLabel(flow.taskPreview, "예상 작업 원문")}</div>
+      <p class="queue-subtitle">출발: ${safeLabel(flow.sourceTitle, "-")}</p>
+    `;
+    node.addEventListener("click", () => {
+      state.selectedFlowId = flow.handoffId;
+      renderWorkspace();
+    });
+    elements.queueList.appendChild(node);
+  }
+}
+
+function renderProgress(member) {
+  const flow = selectedFlow(member);
+  elements.progressPanel.innerHTML = "";
+  elements.progressRoute.textContent = flow ? (flow.routeLabel || flow.route || "-") : "-";
+  if (!flow) {
+    elements.progressPanel.innerHTML = `<div class="detail-empty">선택된 작업이 없습니다.</div>`;
+    return;
+  }
+  const taskFullText = safeLabel(flow.taskText || flow.taskPreview, "원문 복구 필요");
+  const top = document.createElement("article");
+  top.className = "detail-card";
+  top.innerHTML = `
+    <p class="eyebrow">작업 요약</p>
+    <strong>${safeLabel(flow.taskPreview, "예상 작업 원문")}</strong>
+    <div class="detail-topic-row">${pillHtml("queue-chip", flow.topicTitle || "일반 운영", "", "tone-neutral")}</div>
+    <dl class="detail-list">
+      <div class="detail-row"><dt>생성 시각</dt><dd>${formatTimestamp(flow.createdAt)}</dd></div>
+      <div class="detail-row"><dt>출발 스레드</dt><dd>${safeLabel(flow.sourceTitle, "-")}</dd></div>
+      <div class="detail-row"><dt>메모</dt><dd>${safeLabel(flow.sourceNotes, "-")}</dd></div>
+    </dl>
+    <details class="detail-expand">
+      <summary>작업 원문 전체 보기</summary>
+      <pre class="detail-fulltext">${taskFullText}</pre>
+    </details>
+  `;
+  elements.progressPanel.appendChild(top);
+
+  const promptChain = document.createElement("article");
+  promptChain.className = "detail-card";
+  promptChain.innerHTML = `
+    <p class="eyebrow">프롬프트 체인</p>
+    <strong>대표님 -> 비서 -> 사장 -> 팀/협력 전달 흐름</strong>
+    <details class="detail-expand" open>
+      <summary>대표님 접수 원문 보기</summary>
+      <pre class="detail-fulltext">${taskFullText}</pre>
+    </details>
+    <div class="prompt-chain-list"></div>
+  `;
+  const promptChainList = promptChain.querySelector(".prompt-chain-list");
+  for (const assignment of flow.assignments || []) {
+    if (!(promptChainList instanceof HTMLElement)) break;
+    const requestText = safeLabel(assignment.requestText || assignment.requestPreview, "전달 프롬프트 복구 필요");
+    const item = document.createElement("details");
+    item.className = "detail-expand prompt-chain-item";
+    item.innerHTML = `
+      <summary>${safeLabel(assignment.helperTitle || "배정 대상", "배정 대상")} 전달 프롬프트 전체 보기</summary>
+      <pre class="detail-fulltext">${requestText}</pre>
+    `;
+    promptChainList.appendChild(item);
+  }
+  elements.progressPanel.appendChild(promptChain);
+
+  for (const assignment of flow.assignments || []) {
+    const responseText = safeLabel(assignment.responseText || assignment.responsePreview, "응답 원문 복구 필요");
+    const card = document.createElement("article");
+    card.className = "detail-card";
+    card.innerHTML = `
+      <p class="eyebrow">${assignment.helperTitle || "배정 대상"}</p>
+      <strong>${assignment.status || "-"}</strong>
+      <dl class="detail-list">
+        <div class="detail-row"><dt>역할</dt><dd>${assignment.helperRole || "-"}</dd></div>
+        <div class="detail-row"><dt>업데이트</dt><dd>${formatTimestamp(assignment.updatedAt)}</dd></div>
+      </dl>
+      ${assignment.responsePreview ? `<p class="detail-copy">${safeLabel(assignment.responsePreview, "응답 원문 복구 필요")}</p>` : ""}
+      ${assignment.responseText ? `
+        <details class="detail-expand">
+          <summary>진행사항 전체 보기</summary>
+          <pre class="detail-fulltext">${responseText}</pre>
+        </details>
+      ` : ""}
+    `;
+    elements.progressPanel.appendChild(card);
+  }
+}
+
+function renderReportFocus(member) {
+  const flow = selectedFlow(member);
+  elements.reportFocus.innerHTML = "";
+  if (!flow) {
+    elements.reportFocus.innerHTML = `<div class="detail-empty">작업을 선택하면 3줄 요약과 보고서 링크를 보여줍니다.</div>`;
+    return;
+  }
+  const resultMessage = getConversation().find((item) => item.handoffId === flow.handoffId && item.kind === "result");
+  const lines = resultMessage?.summaryLines?.length
+    ? resultMessage.summaryLines
+    : ["아직 최종 요약이 없고, helper가 배경 분석 중입니다.", "완료되면 HTML 또는 MD 결과 링크가 나타납니다."];
+  const report = resultMessage?.report || {};
+  const links = visibleReportLinks(report);
+  elements.reportFocus.innerHTML = `
+    <div class="report-topic">${pillHtml("queue-chip", flow.topicTitle || "일반 운영", "", "tone-neutral")}</div>
+    <div class="report-title">${safeLabel(report.title || flow.handoffId, flow.handoffId || "보고서")}</div>
+    <ol class="report-lines">${lines.slice(0, 3).map((line) => `<li>${safeLabel(line, "원문 복구 필요")}</li>`).join("")}</ol>
+    <div class="report-links">${links.map((link) => `<a class="report-link" target="_blank" rel="noopener" href="${link.url}">${link.label}</a>`).join("")}</div>
+  `;
 }
 
 function renderConversation() {
-  const conversation = mergeConversation();
-  const lastMessageId = conversation.length ? conversation[conversation.length - 1].id : "";
-  const shouldScroll = state.lastRenderedMessageId !== lastMessageId;
-
+  const conversation = [...getConversation()].sort(
+    (left, right) => parseTimestamp(right.createdAt) - parseTimestamp(left.createdAt)
+  );
   elements.chatLog.innerHTML = "";
-
   if (!conversation.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "아직 대화가 없습니다. 대화 탭에서 명령을 보내면 서브 에이전트에 비동기로 전달됩니다.";
-    elements.chatLog.appendChild(empty);
-    state.lastRenderedMessageId = "";
+    elements.chatLog.innerHTML = `<div class="chat-empty">아직 대화 기록이 없습니다.</div>`;
     return;
   }
-
-  for (const message of conversation) {
-    const node = elements.messageTemplate.content.firstElementChild.cloneNode(true);
-    const kind = normalizeMessageKind(message);
-    node.classList.add(kind);
-    node.querySelector(".message-kind").textContent = message.kind || message.role || "status";
-    node.querySelector(".message-time").textContent = formatTimestamp(message.createdAt);
-    node.querySelector(".bubble").textContent = message.text || "";
-    elements.chatLog.appendChild(node);
-  }
-
-  state.lastRenderedMessageId = lastMessageId;
-  smoothScrollToBottom(shouldScroll);
-}
-
-function getOverviewEntries(snapshot) {
-  const overview = snapshot?.overview || {};
-  return [
-    {
-      label: "Watchdog",
-      value: overview.watchdog?.status || "-",
-      detail: `task=${overview.watchdog?.taskId || "-"} / decision=${overview.watchdog?.decision || "-"}`,
-    },
-    {
-      label: "Queue",
-      value: overview.watchdog?.queueEmpty ? "비어 있음" : "작업 있음",
-      detail: `queueDecision=${overview.watchdog?.queueDecision || "-"}`,
-    },
-    {
-      label: "Helpers",
-      value: `${overview.helpers?.pendingAssignmentCount ?? 0} pending`,
-      detail: `stale=${overview.helpers?.staleAssignmentCount ?? 0}, handoff=${overview.helpers?.handoffCount ?? 0}`,
-    },
-    {
-      label: "Scheduler",
-      value: `${overview.scheduler?.openJobCount ?? 0} open`,
-      detail: `jobCount=${overview.scheduler?.jobCount ?? 0}`,
-    },
-    {
-      label: "Gmail",
-      value: overview.gmail?.running ? "running" : "idle",
-      detail: overview.gmail?.skipReason || overview.gmail?.updatedAt || "-",
-    },
-    {
-      label: "Async",
-      value: overview.asyncRuntime?.running ? "ready" : "offline",
-      detail: `popup=${overview.asyncRuntime?.notifiedCount ?? 0}, updatedAt=${overview.asyncRuntime?.updatedAt || "-"}`,
-    },
-  ];
-}
-
-function renderOverviewCards(target, cards) {
-  target.innerHTML = "";
-  for (const card of cards) {
-    const node = elements.overviewCardTemplate.content.firstElementChild.cloneNode(true);
-    node.querySelector(".overview-label").textContent = card.label;
-    node.querySelector(".overview-value").textContent = card.value;
-    node.querySelector(".overview-detail").textContent = card.detail;
-    target.appendChild(node);
-  }
-}
-
-function renderAlerts(target, alerts, limit = alerts.length) {
-  target.innerHTML = "";
-  const items = Array.isArray(alerts) ? alerts.slice(0, limit) : [];
-  if (!items.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "즉시 조치가 필요한 경고는 없습니다.";
-    target.appendChild(empty);
-    return;
-  }
-  for (const alert of items) {
-    const node = elements.alertTemplate.content.firstElementChild.cloneNode(true);
-    node.classList.add(alert.level || "info");
-    node.querySelector(".alert-title").textContent = alert.title || "알림";
-    node.querySelector(".alert-detail").textContent = alert.detail || "-";
-    target.appendChild(node);
-  }
-}
-
-function renderFlows(target, flows, limit = flows.length) {
-  target.innerHTML = "";
-  const items = Array.isArray(flows) ? flows.slice(0, limit) : [];
-  if (!items.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "표시할 최근 handoff가 없습니다.";
-    target.appendChild(empty);
-    return;
-  }
-
-  for (const flow of items) {
-    const node = elements.flowTemplate.content.firstElementChild.cloneNode(true);
-    const latestAssignment = Array.isArray(flow.assignments) && flow.assignments.length
-      ? flow.assignments[flow.assignments.length - 1]
-      : null;
-    node.querySelector(".flow-id").textContent = flow.handoffId || flow.id || "-";
-    node.querySelector(".flow-title").textContent = flow.sourceTitle || flow.title || "최근 handoff";
-    node.querySelector(".flow-route").textContent = flow.routeLabel || flow.route || "route";
-    node.querySelector(".flow-task").textContent =
-      latestAssignment?.requestPreview || flow.taskText || flow.sourceNotes || "-";
-    node.querySelector(".flow-response").textContent =
-      latestAssignment?.responsePreview || latestAssignment?.requestPreview || flow.path || "-";
-    target.appendChild(node);
-  }
-}
-
-function makeStatItem(key, value) {
-  const wrapper = document.createElement("div");
-  const dt = document.createElement("dt");
-  const dd = document.createElement("dd");
-  dt.textContent = key;
-  dd.textContent = value;
-  wrapper.appendChild(dt);
-  wrapper.appendChild(dd);
-  return wrapper;
-}
-
-function renderThreads(target, threads, limit = threads.length) {
-  target.innerHTML = "";
-  const items = Array.isArray(threads) ? threads.slice(0, limit) : [];
-  if (!items.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "표시할 스레드가 없습니다.";
-    target.appendChild(empty);
-    return;
-  }
-
-  for (const thread of items) {
-    const node = elements.threadTemplate.content.firstElementChild.cloneNode(true);
-    node.querySelector(".thread-kind").textContent = thread.kind || "-";
-    node.querySelector(".thread-title").textContent = thread.displayName || thread.title || "-";
-    node.querySelector(".thread-role").textContent = thread.role || thread.responsibility || "-";
-    const stats = node.querySelector(".thread-stats");
-    stats.appendChild(makeStatItem("state", thread.state || "-"));
-    stats.appendChild(makeStatItem("updated", formatTimestamp(thread.updatedAt)));
-    stats.appendChild(makeStatItem("threadId", thread.threadId || thread.id || "-"));
-    stats.appendChild(makeStatItem("route", thread.routeLabel || thread.route || "-"));
-    target.appendChild(node);
-  }
-}
-
-function renderDetailCards(target, groups) {
-  target.innerHTML = "";
+  const groups = groupItemsByTopic(conversation);
   for (const group of groups) {
-    const node = elements.detailTemplate.content.firstElementChild.cloneNode(true);
-    node.querySelector(".detail-label").textContent = group.label;
-    node.querySelector(".detail-title").textContent = group.title;
-    const list = node.querySelector(".detail-list");
-    for (const [key, value] of Object.entries(group.items || {})) {
-      list.appendChild(makeStatItem(key, String(value ?? "-")));
+    const groupNode = document.createElement("section");
+    groupNode.className = "chat-topic-group";
+    groupNode.innerHTML = `
+      <div class="chat-topic-head">
+        <strong>${group.topicTitle}</strong>
+        <span>${group.items.length}건</span>
+      </div>
+    `;
+    for (const message of group.items) {
+      const roleClass = message.role === "user" ? "user" : "assistant";
+      const node = document.createElement("article");
+      node.className = `chat-item ${roleClass}`;
+      const label = message.role === "user" ? "대표님 지시" : message.kind === "result" ? "결과 보고" : "상태 보고";
+      const lines = Array.isArray(message.summaryLines) && message.summaryLines.length
+        ? message.summaryLines.map((line) => rewriteVisibleSystemText(line))
+        : [message.role === "user" ? extractRepresentativeDirective(message.text) || "" : stripInternalRoutingPrefix(rewriteVisibleSystemText(message.text)) || ""];
+      node.innerHTML = `
+        <div class="chat-meta">${label} · ${formatTimestamp(message.createdAt)}</div>
+        <div class="chat-bubble">
+          <ol class="chat-lines">${lines.slice(0, 3).map((line) => `<li>${safeLabel(line, "원문 복구 필요")}</li>`).join("")}</ol>
+        </div>
+      `;
+      groupNode.appendChild(node);
     }
-    target.appendChild(node);
+    elements.chatLog.appendChild(groupNode);
   }
+  elements.chatLog.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function renderPaths(snapshot) {
-  const paths = snapshot?.paths || {};
-  elements.paths.innerHTML = "";
-  for (const [label, path] of Object.entries(paths)) {
-    const li = document.createElement("li");
-    li.textContent = `${label}: ${path}`;
-    elements.paths.appendChild(li);
-  }
-
-  const groups = Object.entries(paths).map(([label, path]) => ({
-    label: "Path",
-    title: label,
-    items: {
-      location: path,
-    },
-  }));
-  renderDetailCards(elements.pathCards, groups);
+function renderComposer(member) {
+  const title = member?.displayName || "[비서] 보고자";
+  const flow = selectedFlow(member);
+  const contextTitle = title === "[비서] 보고자" ? "비서 선접수" : `참고 중 ${title}`;
+  elements.composerTargetTitle.textContent = "[비서] 보고자에게 바로 지시";
+  elements.composerTargetMeta.textContent = `${contextTitle}${flow ? ` · 대주제 ${flow.topicTitle || "일반 운영"} · 참고 큐 ${flow.handoffId}` : ""}`;
+  elements.composerHint.textContent = "대표님 지시는 먼저 [비서] 보고자가 받습니다. 비서가 스킬 후보와 요약을 고른 뒤 [관리자] 사장이 직접 처리할지, 팀장이나 협력 스레드에 위임할지 결정합니다.";
 }
 
-function renderHeroMetrics(snapshot) {
-  elements.heroMetrics.innerHTML = "";
-  const overview = snapshot?.overview || {};
-  const metrics = [
-    { label: "watchdog", value: overview.watchdog?.status || "idle" },
-    { label: "helpers", value: `${overview.helpers?.pendingAssignmentCount ?? 0} pending` },
-    { label: "gmail", value: overview.gmail?.running ? "running" : "idle" },
-    { label: "async", value: overview.asyncRuntime?.running ? "ready" : "offline" },
-  ];
-  for (const metric of metrics) {
-    elements.heroMetrics.appendChild(makeMetricChip(metric.label, metric.value));
-  }
-}
-
-function renderGlobalBanner(snapshot) {
-  const alerts = Array.isArray(snapshot?.alerts) ? snapshot.alerts : [];
-  const primary = alerts.find((item) => item.level === "error") || alerts.find((item) => item.level === "warn") || alerts[0];
-  if (!primary) {
-    elements.globalBanner.hidden = true;
-    elements.globalBanner.textContent = "";
-    elements.globalBanner.className = "global-banner";
+function renderFlowTimeline() {
+  const flows = getFlows();
+  elements.flowTimeline.innerHTML = "";
+  if (!flows.length) {
+    elements.flowTimeline.innerHTML = `<div class="detail-empty">최근 흐름이 없습니다.</div>`;
     return;
   }
-  elements.globalBanner.hidden = false;
-  elements.globalBanner.className = `global-banner ${primary.level || "info"}`;
-  elements.globalBanner.textContent = `${primary.title || "알림"} - ${primary.detail || ""}`;
+  for (const flow of flows) {
+    const node = document.createElement("article");
+    node.className = "timeline-card";
+    node.innerHTML = `
+      <div class="timeline-meta">
+        ${pillHtml("queue-chip", flow.topicTitle || "일반 운영", "", "tone-neutral")}
+        ${pillHtml("queue-chip", flow.routeLabel || flow.route || "-", "", "tone-queued")}
+        ${pillHtml("queue-chip", formatTimestamp(flow.createdAt), "", "tone-neutral")}
+        ${pillHtml("queue-chip", safeLabel(flow.sourceTitle, "-"), "", "tone-neutral")}
+      </div>
+      <div class="timeline-title">${safeLabel(flow.taskPreview, "예상 작업 원문")}</div>
+      <p class="queue-subtitle">${(flow.assignments || []).map((item) => `${safeLabel(item.helperTitle, "대상")}: ${safeLabel(item.status, "-")}`).join(" · ") || "배정 없음"}</p>
+    `;
+    node.addEventListener("click", () => {
+      state.selectedFlowId = flow.handoffId;
+      state.selectedMemberTitle = "[비서] 보고자";
+      setActiveTab("board");
+      renderWorkspace();
+    });
+    elements.flowTimeline.appendChild(node);
+  }
 }
 
-function renderStatusDetails(snapshot) {
-  const overview = snapshot?.overview || {};
-  const groups = [
-    {
-      label: "Runtime",
-      title: "Watchdog",
-      items: {
-        status: overview.watchdog?.status || "-",
-        taskId: overview.watchdog?.taskId || "-",
-        decision: overview.watchdog?.decision || "-",
-        queueEmpty: String(Boolean(overview.watchdog?.queueEmpty)),
-        queueDecision: overview.watchdog?.queueDecision || "-",
-      },
-    },
-    {
-      label: "Helpers",
-      title: "Helper Queue",
-      items: {
-        pending: overview.helpers?.pendingAssignmentCount ?? 0,
-        stale: overview.helpers?.staleAssignmentCount ?? 0,
-        handoffs: overview.helpers?.handoffCount ?? 0,
-        updatedAt: overview.helpers?.updatedAt || "-",
-      },
-    },
-    {
-      label: "Dispatch",
-      title: "Scheduler",
-      items: {
-        openJobs: overview.scheduler?.openJobCount ?? 0,
-        jobs: overview.scheduler?.jobCount ?? 0,
-        updatedAt: overview.scheduler?.updatedAt || "-",
-      },
-    },
-    {
-      label: "Channel",
-      title: "Gmail",
-      items: {
-        running: overview.gmail?.running ? "true" : "false",
-        skipReason: overview.gmail?.skipReason || "-",
-        updatedAt: overview.gmail?.updatedAt || "-",
-      },
-    },
-    {
-      label: "Async",
-      title: "Popup & Reports",
-      items: {
-        running: overview.asyncRuntime?.running ? "true" : "false",
-        notifiedCount: overview.asyncRuntime?.notifiedCount ?? 0,
-        updatedAt: overview.asyncRuntime?.updatedAt || "-",
-      },
-    },
-    {
-      label: "PTT",
-      title: "Microphone Trigger",
-      items: {
-        recording: snapshot?.ptt?.recording ? "true" : "false",
-        updatedAt: snapshot?.ptt?.updatedAt || "-",
-        source: snapshot?.ptt?.source || "-",
-      },
-    },
-  ];
-  renderDetailCards(elements.statusDetails, groups);
+function renderReportLibrary() {
+  const results = getConversation().filter((item) => item.kind === "result" && visibleReportLinks(item.report).length);
+  elements.reportLibrary.innerHTML = "";
+  if (!results.length) {
+    elements.reportLibrary.innerHTML = `<div class="detail-empty">연결된 보고서가 아직 없습니다.</div>`;
+    return;
+  }
+  for (const result of results) {
+    const links = visibleReportLinks(result.report);
+    const node = document.createElement("article");
+    node.className = "report-card";
+    node.innerHTML = `
+      <div class="report-title-text">${safeLabel(result.report.title || result.handoffId, result.handoffId || "보고서")}</div>
+      <p class="queue-subtitle">대주제 · ${topicTitleForItem(result)}</p>
+      <p class="queue-subtitle">${(result.summaryLines || []).slice(0, 3).map((line) => safeLabel(line, "원문 복구 필요")).join(" / ")}</p>
+      <div class="report-links">${links.map((link) => `<a class="report-link" target="_blank" rel="noopener" href="${link.url}">${link.label}</a>`).join("")}</div>
+    `;
+    elements.reportLibrary.appendChild(node);
+  }
 }
 
-function renderSnapshot(snapshot) {
-  state.snapshot = snapshot;
-  state.recording = Boolean(snapshot.ptt?.recording);
-  elements.generatedAt.textContent = formatTimestamp(snapshot.generatedAt);
-  elements.sessionExpiresAt.textContent = state.auth.authenticated
-    ? formatTimestamp(state.auth.sessionExpiresAt)
-    : "-";
-  elements.micButton.classList.toggle("recording", state.recording);
-  elements.micButton.setAttribute("aria-pressed", state.recording ? "true" : "false");
+function renderSettings() {
+  const publicTunnel = state.snapshot?.paths?.publicTunnelStatus || "";
+  const overview = state.snapshot?.overview || {};
+  elements.settingsPanel.innerHTML = `
+    <article class="setting-card">
+      <p class="eyebrow">접속 정책</p>
+      <strong>${state.auth.mode === "trusted-local" ? "로컬 무로그인" : "원격 코드 로그인"}</strong>
+      <p class="setting-copy">${state.auth.message || ""}</p>
+      <dl>
+        <div><dt>public tunnel 상태 파일</dt><dd>${publicTunnel || "-"}</dd></div>
+        <div><dt>runtime root</dt><dd>${state.snapshot?.paths?.runtimeRoot || "-"}</dd></div>
+      </dl>
+    </article>
+    <article class="setting-card">
+      <p class="eyebrow">운영 상태</p>
+      <strong>watchdog / scheduler / gmail</strong>
+      <dl>
+        <div><dt>watchdog</dt><dd>${overview.watchdog?.status || "-"} · ${overview.watchdog?.decision || "-"}</dd></div>
+        <div><dt>scheduler</dt><dd>open ${overview.scheduler?.openJobCount ?? 0}</dd></div>
+        <div><dt>gmail</dt><dd>${overview.gmail?.running ? "running" : "stopped"}${overview.gmail?.skipReason ? ` · ${overview.gmail.skipReason}` : ""}</dd></div>
+      </dl>
+    </article>
+  `;
+}
 
-  const overviewCards = getOverviewEntries(snapshot);
-  renderGlobalBanner(snapshot);
-  renderHeroMetrics(snapshot);
+function renderWorkspace() {
+  const threads = getThreads();
+  const secretary = threads.find((item) => (item.displayName || item.title) === "[비서] 보고자") || null;
+  const manager = threads.find((item) => (item.displayName || item.title) === "[관리자] 사장") || null;
+  const member = selectedMember() || secretary || manager || threads[0] || null;
+  if (member) {
+    state.selectedMemberTitle = member.displayName || member.title;
+    expandGroupForMember(state.selectedMemberTitle);
+  }
+  renderResourceCard();
+  buildSummaryCards();
+  renderBanner();
+  renderBoardPaneFocus();
+  renderMembers();
+  renderMemberSummary(member);
+  renderQueueList(member);
+  renderProgress(member);
+  renderDirectiveHistory();
+  renderReportFocus(member);
   renderConversation();
-  renderOverviewCards(elements.overviewCards, overviewCards);
-  renderOverviewCards(elements.conversationStatusCards, overviewCards.slice(0, 4));
-  renderOverviewCards(elements.statusCards, overviewCards);
-  renderAlerts(elements.homeAlerts, snapshot.alerts || [], 3);
-  renderAlerts(elements.alerts, snapshot.alerts || []);
-  renderFlows(elements.homeFlows, snapshot.messageFlows || [], 3);
-  renderFlows(elements.messageFlows, snapshot.messageFlows || []);
-  renderThreads(elements.homeThreads, snapshot.threads || [], 4);
-  renderThreads(elements.threadGrid, snapshot.threads || []);
-  renderStatusDetails(snapshot);
-  renderPaths(snapshot);
+  renderComposer(member);
+  renderFlowTimeline();
+  renderReportLibrary();
+  renderSettings();
 }
 
-async function loadSnapshot() {
-  return fetchJson("/api/snapshot");
+function renderAuthGate() {
+  const gateVisible = state.auth.requiresLogin && !state.auth.authenticated;
+  elements.authGate.hidden = !gateVisible;
+  elements.logoutButton.hidden = !state.auth.authenticated || state.auth.mode !== "remote-code";
+  elements.sendButton.disabled = gateVisible;
+  elements.micButton.disabled = gateVisible;
+  elements.promptInput.disabled = gateVisible;
+  elements.accessMode.textContent = state.auth.mode === "trusted-local" ? "로컬 무로그인" : "원격 코드 로그인";
+  elements.sessionExpiresAt.textContent = state.auth.sessionExpiresAt ? formatTimestamp(state.auth.sessionExpiresAt) : "-";
+  elements.authHint.textContent = state.auth.message || "";
+  if (gateVisible) {
+    window.setTimeout(() => elements.codeInput.focus(), 60);
+  }
+}
+
+async function syncAuthState() {
+  const payload = await fetchJson("/api/auth/state");
+  state.auth = {
+    authenticated: Boolean(payload.authenticated),
+    requiresLogin: Boolean(payload.requiresLogin),
+    mode: payload.mode || "trusted-local",
+    csrfToken: payload.csrfToken || "",
+    sessionExpiresAt: payload.sessionExpiresAt || "",
+    message: payload.message || "",
+  };
+  renderAuthGate();
 }
 
 async function refreshSnapshot() {
-  if (!state.auth.authenticated || state.isRefreshing) return;
+  if (state.isRefreshing) return;
+  if (state.auth.requiresLogin && !state.auth.authenticated) return;
   state.isRefreshing = true;
   try {
-    const snapshot = await loadSnapshot();
-    renderSnapshot(snapshot);
+    const snapshot = await fetchJson("/api/snapshot");
+    if (state.uiVersion && snapshot.uiVersion && state.uiVersion !== snapshot.uiVersion) {
+      window.location.reload();
+      return;
+    }
+    state.uiVersion = snapshot.uiVersion || state.uiVersion;
+    state.snapshot = snapshot;
+    state.recording = Boolean(snapshot.ptt?.recording);
+    elements.generatedAt.textContent = formatTimestamp(snapshot.generatedAt);
+    elements.micButton.classList.toggle("recording", state.recording);
+    elements.micButton.setAttribute("aria-pressed", state.recording ? "true" : "false");
+    if (elements.syncState) {
+      elements.syncState.textContent = "?ㅼ떆媛??곌껐";
+      elements.syncState.className = "sync-live";
+    }
+    try {
+      renderWorkspace();
+    } catch (renderError) {
+      recordClientError(renderError);
+    }
   } catch (error) {
-    showToast("데이터를 불러오지 못했습니다", error.message);
+    recordClientError(error);
   } finally {
     state.isRefreshing = false;
   }
 }
 
-function addOptimisticMessage(text) {
-  const optimistic = {
-    id: `local-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
-    role: "user",
-    kind: "command",
-    text,
-    createdAt: new Date().toISOString(),
-    optimistic: true,
-  };
-  state.optimisticMessages.push(optimistic);
-  renderConversation();
-  return optimistic.id;
+function startRefreshLoop() {
+  if (state.refreshTimer) return;
+  state.refreshTimer = window.setInterval(refreshSnapshot, 5000);
 }
 
-function removeOptimisticMessage(id) {
-  state.optimisticMessages = state.optimisticMessages.filter((item) => item.id !== id);
-}
-
-async function submitCommand(event) {
-  event.preventDefault();
-  const text = elements.promptInput.value.trim();
-  if (!text) {
-    showToast("명령이 비어 있습니다", "보낼 내용을 입력해 주세요.");
-    return;
-  }
-
-  const optimisticId = addOptimisticMessage(text);
-  elements.promptInput.value = "";
-  autosizeTextarea();
-  setActiveTab("conversation");
-
-  try {
-    await fetchJson(
-      "/api/commands",
-      {
-        method: "POST",
-        body: JSON.stringify({ text }),
-      },
-      { includeCsrf: true },
-    );
-    removeOptimisticMessage(optimisticId);
-    showToast("백그라운드 전달 완료", "서브 에이전트에 작업을 넘겼고, 결과가 준비되면 팝업으로 알려드립니다.");
-    await refreshSnapshot();
-  } catch (error) {
-    removeOptimisticMessage(optimisticId);
-    renderConversation();
-    showToast("명령 전송 실패", error.message);
-  }
-}
-
-async function togglePtt() {
-  const nextRecording = !state.recording;
-  elements.micButton.classList.toggle("recording", nextRecording);
-  elements.micButton.setAttribute("aria-pressed", nextRecording ? "true" : "false");
-
-  try {
-    const payload = await fetchJson(
-      "/api/ptt",
-      {
-        method: "POST",
-        body: JSON.stringify({ recording: nextRecording }),
-      },
-      { includeCsrf: true },
-    );
-    state.recording = Boolean(payload.ptt?.recording);
-    elements.micButton.classList.toggle("recording", state.recording);
-    elements.micButton.setAttribute("aria-pressed", state.recording ? "true" : "false");
-    showToast(
-      state.recording ? "PTT 대기 시작" : "PTT 대기 종료",
-      state.recording ? "지금은 녹음 트리거를 보내는 상태입니다." : "마이크 트리거를 끈 상태입니다.",
-      2600,
-    );
-    await refreshSnapshot();
-  } catch (error) {
-    elements.micButton.classList.toggle("recording", state.recording);
-    elements.micButton.setAttribute("aria-pressed", state.recording ? "true" : "false");
-    showToast("PTT 상태 전환 실패", error.message);
-  }
+function stopRefreshLoop() {
+  if (!state.refreshTimer) return;
+  window.clearInterval(state.refreshTimer);
+  state.refreshTimer = null;
 }
 
 async function submitAuth(event) {
   event.preventDefault();
   const code = elements.codeInput.value.trim();
   if (!code) {
-    showToast("접속 코드가 비어 있습니다", "데스크톱에서 받은 접속 코드를 입력해 주세요.");
+    showToast("?묒냽 肄붾뱶媛 鍮꾩뼱 ?덉뒿?덈떎", "硫붿떆吏??硫붿씪?먯꽌 諛쏆? 肄붾뱶瑜??낅젰??二쇱꽭??");
     return;
   }
-
+  elements.authSubmit.disabled = true;
   try {
     const payload = await fetchJson("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ code }),
     });
-    state.auth = {
-      authenticated: Boolean(payload.auth?.authenticated),
-      setupRequired: Boolean(payload.auth?.setupRequired),
-      codeOnly: payload.auth?.codeOnly !== false,
-      codeLabel: payload.auth?.codeLabel || "접속 코드",
-      csrfToken: payload.auth?.csrfToken || "",
-      sessionExpiresAt: payload.auth?.sessionExpiresAt || "",
-    };
+    state.auth.authenticated = Boolean(payload.auth?.authenticated);
+    state.auth.mode = payload.auth?.mode || "remote-code";
+    state.auth.requiresLogin = true;
+    state.auth.csrfToken = payload.auth?.csrfToken || "";
+    state.auth.sessionExpiresAt = payload.auth?.sessionExpiresAt || "";
     renderAuthGate();
     startRefreshLoop();
-    showToast("로그인 완료", "접속 코드로 Command Center에 들어왔습니다.");
+    showToast("濡쒓렇???꾨즺", "?댁젣 怨듦컻 留곹겕?먯꽌???먯? 蹂닿퀬?쒕? 蹂????덉뒿?덈떎.");
     await refreshSnapshot();
   } catch (error) {
-    showToast("인증 실패", error.message);
+    showToast("濡쒓렇???ㅽ뙣", error.message);
+  } finally {
+    elements.authSubmit.disabled = false;
   }
 }
 
@@ -769,46 +1331,143 @@ async function logout() {
   try {
     await fetchJson("/api/auth/logout", { method: "POST" }, { includeCsrf: true });
   } catch {
-    // Even if logout request fails, force local auth reset.
+    // ignore
   }
-  resetAuthState();
   stopRefreshLoop();
-  renderAuthGate();
-  showToast("로그아웃됨", "다시 접속 코드를 입력해야 합니다.");
+  await syncAuthState();
 }
 
-for (const button of tabButtons) {
-  button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
+async function togglePtt() {
+  const next = !state.recording;
+  try {
+    const payload = await fetchJson(
+      "/api/ptt",
+      {
+        method: "POST",
+        body: JSON.stringify({ recording: next }),
+      },
+      { includeCsrf: true },
+    );
+    state.recording = Boolean(payload.ptt?.recording);
+    elements.micButton.classList.toggle("recording", state.recording);
+    elements.micButton.setAttribute("aria-pressed", state.recording ? "true" : "false");
+    showToast(state.recording ? "PTT ?쒖옉" : "PTT 醫낅즺", state.recording ? "?뚯꽦 ?몃━嫄곕? 耳곗뒿?덈떎." : "?뚯꽦 ?몃━嫄곕? 猿먯뒿?덈떎.");
+    await refreshSnapshot();
+  } catch (error) {
+    showToast("PTT ?꾪솚 ?ㅽ뙣", error.message);
+  }
 }
 
-for (const button of jumpButtons) {
-  button.addEventListener("click", () => setActiveTab(button.dataset.jumpTab));
+async function submitCommand(event) {
+  event.preventDefault();
+  if (state.inputComposing) return;
+  const rawText = elements.promptInput.value.trim();
+  if (!rawText) {
+    showToast("蹂대궪 ?댁슜???놁뒿?덈떎", "異붽? 吏?쒕굹 ?뺤씤 ?댁슜???낅젰??二쇱꽭??");
+    return;
+  }
+  const member = selectedMember();
+  const flow = selectedFlow(member);
+  const title = member?.displayName || "[愿由ъ옄] ?ъ옣";
+  elements.sendButton.disabled = true;
+  try {
+    await fetchJson(
+      "/api/commands",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          text: rawText,
+          contextMemberTitle: title,
+          contextFlowId: flow?.handoffId || "",
+          intakeMode: "secretary-first",
+        }),
+      },
+      { includeCsrf: true },
+    );
+    elements.promptInput.value = "";
+    saveDraft("");
+    autosizeTextarea();
+    showToast("지시 전달 완료", "[비서] 보고자가 먼저 접수하고 스킬을 정리한 뒤, [관리자] 사장이 내부 위임 여부를 판단합니다.");
+    await refreshSnapshot();
+  } catch (error) {
+    showToast("지시 전달 실패", error.message);
+  } finally {
+    elements.sendButton.disabled = false;
+  }
 }
 
-elements.promptInput.addEventListener("input", autosizeTextarea);
+elements.tabs.forEach((tab) => {
+  tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
+});
+
+elements.themeToggle.addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
+elements.authForm.addEventListener("submit", submitAuth);
+elements.logoutButton.addEventListener("click", logout);
+elements.micButton.addEventListener("click", togglePtt);
+elements.composerForm.addEventListener("submit", submitCommand);
+elements.promptInput.addEventListener("input", () => {
+  saveDraft(elements.promptInput.value);
+  autosizeTextarea();
+});
+elements.promptInput.addEventListener("compositionstart", () => {
+  state.inputComposing = true;
+});
+elements.promptInput.addEventListener("compositionend", () => {
+  state.inputComposing = false;
+});
 elements.promptInput.addEventListener("keydown", (event) => {
+  if (event.isComposing || state.inputComposing || event.keyCode === 229) return;
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     elements.composerForm.requestSubmit();
   }
 });
-elements.themeToggle?.addEventListener("click", toggleTheme);
-elements.composerForm.addEventListener("submit", submitCommand);
-elements.micButton.addEventListener("click", togglePtt);
-elements.authForm.addEventListener("submit", submitAuth);
-elements.logoutButton.addEventListener("click", logout);
+
+elements.paneToggles.forEach((toggle) => {
+  const applyToggle = () => {
+    const paneName = toggle.dataset.paneToggle || "";
+    state.focusedBoardPane = state.focusedBoardPane === paneName ? "" : paneName;
+    renderWorkspace();
+  };
+  toggle.addEventListener("click", (event) => {
+    if (event.target.closest("#micButton")) return;
+    applyToggle();
+  });
+  toggle.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      applyToggle();
+    }
+  });
+});
 
 applyTheme(readPreferredTheme(), { persist: false });
+elements.promptInput.value = loadDraft();
 autosizeTextarea();
 renderAuthGate();
-setActiveTab(readTabFromLocation(), { updateHistory: false });
-window.addEventListener("hashchange", () => setActiveTab(readTabFromLocation(), { updateHistory: false }));
+setActiveTab("board");
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    syncAuthState()
+      .then(() => refreshSnapshot())
+      .catch(() => {});
+  }
+});
+
 syncAuthState()
   .then(async () => {
-    if (state.auth.authenticated) {
-      await refreshSnapshot();
-    }
+    startRefreshLoop();
+    await refreshSnapshot();
   })
   .catch((error) => {
-    showToast("인증 상태 확인 실패", error.message);
+    recordClientError(error);
   });
+
+window.addEventListener("error", (event) => {
+  recordClientError(event.error || event.message || "window error");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  recordClientError(event.reason || "unhandled rejection");
+});
