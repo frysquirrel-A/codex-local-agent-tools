@@ -51,6 +51,8 @@ CLOSED_STATUSES = {
     "superseded",
 }
 
+AUTH_DELIVERY_EMAIL = "emnogib@icloud.com"
+
 _LAST_CPU_SAMPLE: tuple[int, int] | None = None
 _LAST_RESOURCE_SAMPLE: tuple[float, dict[str, Any]] | None = None
 _LAST_CPU_CLOCK_SAMPLE: tuple[float, float] | None = None
@@ -195,6 +197,20 @@ def parse_timestamp(value: str | None) -> float:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
     except ValueError:
         return 0.0
+
+
+def resource_guard_reason_label(reason: str) -> str:
+    key = str(reason or "").strip().lower()
+    mapping = {
+        "user_active": "사용 중",
+        "high_cpu": "CPU 사용률 높음",
+        "low_memory": "메모리 부족",
+        "codex_memory_high": "Codex 메모리 사용량 높음",
+        "chrome_memory_high": "Chrome 메모리 사용량 높음",
+        "gpu_busy": "GPU 사용률 높음",
+        "gpu_memory_high": "GPU 메모리 사용량 높음",
+    }
+    return mapping.get(key, str(reason))
 
 
 def trim_text(value: str | None, limit: int = 240) -> str:
@@ -711,16 +727,27 @@ class AuthManager:
 
     def ensure_access_code(self) -> None:
         payload = read_json(self.command_paths.bootstrap_path, {})
-        if payload.get("setupCode"):
-            return
-        write_json(
-            self.command_paths.bootstrap_path,
-            {
-                "setupCode": make_access_code(),
-                "createdAt": utc_now_iso(),
-                "note": "Public tunnel access code for Codex Command Center.",
-            },
-        )
+        changed = False
+        if not payload.get("setupCode"):
+            payload["setupCode"] = make_access_code()
+            payload["createdAt"] = utc_now_iso()
+            changed = True
+        if not payload.get("note"):
+            payload["note"] = "Use this access code to sign in to Codex Command Center."
+            changed = True
+        delivery = dict(payload.get("delivery") or {})
+        if delivery.get("primary") != "email":
+            delivery["primary"] = "email"
+            changed = True
+        if delivery.get("recipient") != AUTH_DELIVERY_EMAIL:
+            delivery["recipient"] = AUTH_DELIVERY_EMAIL
+            changed = True
+        if delivery.get("fallback") != str(self.command_paths.bootstrap_path):
+            delivery["fallback"] = str(self.command_paths.bootstrap_path)
+            changed = True
+        payload["delivery"] = delivery
+        if changed:
+            write_json(self.command_paths.bootstrap_path, payload)
 
     def current_access_code(self) -> tuple[str, dict[str, Any]]:
         self.ensure_access_code()
@@ -734,32 +761,42 @@ class AuthManager:
         host = str(handler.client_address[0] if handler.client_address else "127.0.0.1")
         try:
             ip = ip_address(host)
-            return bool(ip.is_loopback or ip.is_private)
+            return bool(ip.is_loopback)
         except ValueError:
-            return host in {"localhost", "::1"}
+            return host.lower() in {"localhost", "::1"}
 
     def auth_state(self, handler: "ControlCenterHandler") -> dict[str, Any]:
+        session = self.read_session(handler)
+        _, bootstrap = self.current_access_code()
+        delivery = dict(bootstrap.get("delivery") or {})
         if self.is_trusted_request(handler):
             return {
                 "ok": True,
                 "authenticated": True,
                 "mode": "trusted-local",
-                "message": "이 PC 또는 같은 사설망에서는 로그인 없이 바로 운영합니다.",
-                "csrfToken": "trusted-local",
+                "message": "현재 PC의 localhost 접속은 바로 열립니다. 다른 기기나 외부 접속만 접속 코드 로그인이 필요합니다.",
+                "message": "현재 PC의 localhost 접속은 바로 열립니다. 다른 기기나 외부 접속만 접속 코드 로그인이 필요합니다.",
+                "csrfToken": "",
                 "sessionExpiresAt": "",
                 "requiresLogin": False,
+                "codeIssuedAt": str(bootstrap.get("createdAt") or ""),
+                "deliveryPrimary": str(delivery.get("primary") or ""),
+                "deliveryTarget": str(delivery.get("recipient") or ""),
+                "deliveryFallback": str(delivery.get("fallback") or ""),
             }
-        session = self.read_session(handler)
-        _, bootstrap = self.current_access_code()
         return {
             "ok": True,
             "authenticated": bool(session),
-            "mode": "remote-code",
-            "message": "외부 공개 링크에서는 접속 코드 로그인 후 사용합니다.",
+            "mode": "code-login",
+            "message": "모든 접속은 접속 코드 로그인 후 사용합니다. 코드는 대표님 등록 메일로 전달하고, 백업은 로컬 상태 파일에 보관합니다.",
+            "message": "다른 기기나 외부에서 접속할 때는 접속 코드 로그인이 필요합니다. 대표님 메일의 코드나 백업 파일을 사용해 들어오시면 됩니다.",
             "csrfToken": session.get("csrfToken", "") if session else "",
             "sessionExpiresAt": session.get("expiresAt", "") if session else "",
             "requiresLogin": True,
             "codeIssuedAt": str(bootstrap.get("createdAt") or ""),
+            "deliveryPrimary": str(delivery.get("primary") or ""),
+            "deliveryTarget": str(delivery.get("recipient") or ""),
+            "deliveryFallback": str(delivery.get("fallback") or ""),
         }
 
     def read_session(self, handler: "ControlCenterHandler") -> dict[str, Any] | None:
@@ -789,16 +826,20 @@ class AuthManager:
 
     def require_read(self, handler: "ControlCenterHandler") -> dict[str, Any]:
         if self.is_trusted_request(handler):
-            return {"sessionId": "trusted-local", "csrfToken": "trusted-local", "trusted": True}
+            return {
+                "trustedLocal": True,
+                "mode": "trusted-local",
+                "client": self.client_identity(handler),
+            }
         session = self.read_session(handler)
         if not session:
-            raise ApiError(HTTPStatus.UNAUTHORIZED, "auth_required", "공개 링크에서는 접속 코드 로그인이 필요합니다.")
+            raise ApiError(HTTPStatus.UNAUTHORIZED, "auth_required", "접속 코드 로그인이 필요합니다.")
         return session
 
     def require_write(self, handler: "ControlCenterHandler") -> dict[str, Any]:
-        if self.is_trusted_request(handler):
-            return {"sessionId": "trusted-local", "csrfToken": "trusted-local", "trusted": True}
         session = self.require_read(handler)
+        if bool(session.get("trustedLocal")):
+            return session
         csrf_token = handler.headers.get("X-CSRF-Token", "").strip()
         if not csrf_token or csrf_token != str(session.get("csrfToken", "")):
             raise ApiError(HTTPStatus.FORBIDDEN, "invalid_csrf", "요청 확인 토큰이 맞지 않습니다.")
@@ -817,11 +858,14 @@ class AuthManager:
                 "ok": True,
                 "auth": {
                     "authenticated": True,
-                    "mode": "remote-code",
+                    "mode": "code-login",
                     "requiresLogin": True,
                     "csrfToken": session["csrfToken"],
                     "sessionExpiresAt": session["expiresAt"],
                     "codeIssuedAt": str(bootstrap.get("createdAt") or ""),
+                    "deliveryPrimary": str(safe_get(bootstrap, "delivery", "primary", default="")),
+                    "deliveryTarget": str(safe_get(bootstrap, "delivery", "recipient", default="")),
+                    "deliveryFallback": str(safe_get(bootstrap, "delivery", "fallback", default="")),
                 },
             },
             cookie,
@@ -1080,8 +1124,8 @@ class SnapshotBuilder:
                 "kind": "main",
                 "displayName": "[관리자] 사장",
                 "title": "[관리자] 사장",
-                "role": "비서가 올린 요약과 스킬 제안을 받아 승인·최종 실행·최종 검증을 맡습니다.",
-                "stats": {"queued": 0, "running": 1, "pending": 0},
+                "role": "비서 브리프를 바탕으로 우선순위, 위임, 승인, 최종 확인을 맡는 오케스트레이터입니다.",
+                "stats": {"queued": 0, "running": 0, "pending": 0},
             }
         ]
 
@@ -1350,7 +1394,15 @@ class SnapshotBuilder:
             alerts.append({"level": "critical", "title": "watchdog stale", "detail": "자동 이어가기 상태를 다시 확인해야 합니다."})
         reasons = list(safe_get(watchdog_status, "resourceGuardStatus", "reasons", default=[]))
         if reasons:
-            alerts.append({"level": "info", "title": "자원 가드 보류", "detail": ", ".join(str(item) for item in reasons)})
+            labels = [resource_guard_reason_label(item) for item in reasons]
+            detail = ", ".join(str(item) for item in labels if str(item))
+            alerts.append(
+                {
+                    "level": "warn",
+                    "title": "자원 사용량 때문에 대기",
+                    "detail": f"{detail} · 조건이 풀리면 자동 실행됩니다." if detail else "조건이 풀리면 자동 실행됩니다.",
+                }
+            )
         skip_reason = str(gmail_status.get("skipReason") or "").strip()
         if skip_reason:
             alerts.append({"level": "warn", "title": "Gmail 채널 skip", "detail": skip_reason})
@@ -1528,6 +1580,21 @@ class ControlCenterHandler(SimpleHTTPRequestHandler):
             "assistant",
             "status",
             "명령을 접수했습니다. [비서] 보고자가 먼저 정리하고 스킬 후보를 고른 뒤, [관리자] 사장이 직접 처리 또는 팀 위임을 결정합니다.",
+            handoff_id=handoff_id,
+            meta={"route": route_label, "intakeMode": intake_mode, "topicId": topic_id, "topicTitle": topic_title},
+        )
+        summary_list = summary_lines(text, limit=1)
+        summary_line = summary_list[0] if summary_list else trim_text(text, 120)
+        status_text = (
+            "명령을 접수했습니다. [비서] 보고자가 먼저 정리하고 스킬 후보를 고른 뒤, "
+            "[관리자] 사장이 직접 처리 또는 팀 위임을 결정합니다.\n"
+            f"요약: {summary_line}\n"
+            "이대로 진행할까요? 수정할 내용이 있으면 바로 알려주세요."
+        )
+        status_message = build_message(
+            "assistant",
+            "status",
+            status_text,
             handoff_id=handoff_id,
             meta={"route": route_label, "intakeMode": intake_mode, "topicId": topic_id, "topicTitle": topic_title},
         )

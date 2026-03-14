@@ -7,10 +7,14 @@ const state = {
   auth: {
     authenticated: false,
     requiresLogin: false,
-    mode: "trusted-local",
+    mode: "code-login",
     csrfToken: "",
     sessionExpiresAt: "",
     message: "",
+    codeIssuedAt: "",
+    deliveryPrimary: "",
+    deliveryTarget: "",
+    deliveryFallback: "",
   },
   theme: "light",
   uiVersion: "",
@@ -19,7 +23,7 @@ const state = {
   selectedFlowId: "",
   queueFilter: "all",
   selectedTab: "board",
-  focusedBoardPane: "members",
+  focusedBoardPane: "",
   expandedMemberGroups: {
     secretary: true,
     manager: false,
@@ -28,6 +32,7 @@ const state = {
     coop: false,
     external: false,
   },
+  expandedOrgMemberTitle: "",
   refreshTimer: null,
   isRefreshing: false,
   recording: false,
@@ -154,7 +159,7 @@ function looksCorrupted(text) {
   if (!value) return false;
   const questionCount = (value.match(/\?/g) || []).length;
   const replacementCharCount = value.includes("�") ? 1 : 0;
-  return replacementCharCount > 0 || value.includes("?") || questionCount >= Math.max(4, Math.floor(value.length * 0.18));
+  return replacementCharCount > 0 || questionCount >= Math.max(4, Math.floor(value.length * 0.18));
 }
 
 function safeLabel(text, fallback = "원문 복구 필요") {
@@ -309,7 +314,7 @@ async function fetchJson(url, options = {}, { includeCsrf = false } = {}) {
   if (options.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json; charset=utf-8");
   }
-  if (includeCsrf && state.auth.csrfToken && state.auth.mode === "remote-code") {
+  if (includeCsrf && state.auth.csrfToken && state.auth.mode === "code-login") {
     headers.set("X-CSRF-Token", state.auth.csrfToken);
   }
   const response = await fetch(url, {
@@ -328,6 +333,10 @@ async function fetchJson(url, options = {}, { includeCsrf = false } = {}) {
 
   if (response.status === 401) {
     state.auth.authenticated = false;
+    state.auth.requiresLogin = true;
+    state.auth.csrfToken = "";
+    state.auth.sessionExpiresAt = "";
+    stopRefreshLoop();
     renderAuthGate();
     throw new Error(payload.detail || "접속 코드 로그인이 필요합니다.");
   }
@@ -357,6 +366,37 @@ function expandGroupForMember(title) {
   state.expandedMemberGroups[groupKeyForThread(thread)] = true;
 }
 
+function getThreadStats(member) {
+  const stats = member?.stats || {};
+  return {
+    queued: Number(stats.queued || 0),
+    running: Number(stats.running || 0),
+    pending: Number(stats.pending || 0),
+    oldestPendingMinutes: Number(stats.oldestPendingMinutes || 0),
+  };
+}
+
+function memberOperatingMode(member) {
+  const title = member?.displayName || member?.title || "";
+  if (title === "[관리자] 사장") return "오케스트레이터";
+  if (title === "[비서] 보고자") return "비서 접수";
+  if (title.includes("팀장")) return "팀 리드";
+  if (title.startsWith("[협력")) return "전문 협력";
+  if (member?.kind === "provider") return "외부 채널";
+  return "실무 담당";
+}
+
+function memberRoleSummary(member) {
+  const title = member?.displayName || member?.title || "";
+  if (title === "[관리자] 사장") {
+    return "비서가 올린 브리프를 기준으로 우선순위, 위임, 승인, 최종 확인을 맡는 오케스트레이터입니다.";
+  }
+  if (title === "[비서] 보고자") {
+    return "대표님 지시 원문을 먼저 받고, 사장이 판단하기 좋게 요약과 스킬 후보를 정리하는 비서입니다.";
+  }
+  return String(member?.role || "").trim();
+}
+
 function buildMemberCard(thread, groupKey = "") {
   const title = thread.displayName || thread.title;
   const activity = getMemberActivity(thread);
@@ -371,7 +411,7 @@ function buildMemberCard(thread, groupKey = "") {
           <span class="member-activity ${activity.tone}">${activity.label}</span>
         </div>
       </div>
-      <span class="member-tag tone-neutral">${thread.kind === "main" ? "관리" : thread.kind === "helper" ? "실무" : "외부"}</span>
+      <span class="member-tag tone-neutral">${memberOperatingMode(thread)}</span>
     </div>
   `;
   node.addEventListener("click", () => {
@@ -383,6 +423,104 @@ function buildMemberCard(thread, groupKey = "") {
     renderWorkspace();
   });
   return node;
+}
+
+function memberFlowCounts(member) {
+  return memberQueueItems(member).reduce(
+    (acc, flow) => {
+      const stateName = flowStateForMember(flow, member);
+      acc.all += 1;
+      if (stateName === "active") acc.active += 1;
+      else if (stateName === "waiting") acc.waiting += 1;
+      else acc.closed += 1;
+      return acc;
+    },
+    { all: 0, active: 0, waiting: 0, closed: 0 },
+  );
+}
+
+function memberRunningCount(member, counts = memberFlowCounts(member)) {
+  const stats = getThreadStats(member);
+  return Math.max(counts.active, stats.running);
+}
+
+function memberWaitingCount(member, counts = memberFlowCounts(member)) {
+  const stats = getThreadStats(member);
+  return Math.max(counts.waiting, stats.pending + stats.queued);
+}
+
+function memberRecentFlows(member, limit = 2) {
+  return memberQueueItems(member).slice(0, limit);
+}
+
+function buildOrgTreeMember(thread, { primary = false } = {}) {
+  const title = safeLabel(thread.displayName || thread.title, "이름 복구 필요");
+  const activity = getMemberActivity(thread);
+  const counts = memberFlowCounts(thread);
+  const stats = getThreadStats(thread);
+  const runningCount = memberRunningCount(thread, counts);
+  const waitingCount = memberWaitingCount(thread, counts);
+  const isExpanded = state.expandedOrgMemberTitle === title;
+  const isSelected = state.selectedMemberTitle === title;
+  const recentFlows = memberRecentFlows(thread, 2);
+  const pendingOutsideBoard = Math.max(0, waitingCount - counts.waiting);
+  const detailBody = recentFlows.length
+    ? `
+      <div class="tree-member-detail-list">
+        ${recentFlows
+          .map((flow) => {
+            const flowState = flowStateForMember(flow, thread);
+            const tone = flowState === "active" ? "tone-running" : flowState === "waiting" ? "tone-pending" : "tone-complete";
+            const label = flowState === "active" ? "진행중" : flowState === "waiting" ? "대기중" : "완료";
+            return `
+              <article class="tree-member-detail-item">
+                <div class="tree-member-detail-meta">
+                  ${pillHtml("queue-chip", flow.topicTitle || "일반 운영", "", "tone-neutral")}
+                  ${pillHtml("queue-chip", label, "", tone)}
+                </div>
+                <div class="tree-member-detail-text">${safeLabel(flow.taskPreview, "예상 작업 원문")}</div>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    `
+    : `
+      <p class="queue-subtitle">
+        ${pendingOutsideBoard > 0
+          ? `최근 보드 밖에 아직 풀어야 할 대기 큐가 ${pendingOutsideBoard}건 있습니다.`
+          : activity.detail || "현재 연결된 최근 작업이 없습니다."}
+      </p>
+    `;
+
+  return `
+    <article class="tree-member${isExpanded ? " expanded" : ""}">
+      <button class="tree-leaf${primary ? " tree-leaf-primary" : ""}${isSelected ? " active" : ""}" type="button" data-tree-member="${title}">
+        <div class="tree-leaf-copy">
+          <span class="tree-leaf-name">${title}</span>
+          <span class="tree-leaf-role">${memberOperatingMode(thread)}</span>
+        </div>
+        <div class="tree-leaf-meta">
+          <span class="tree-leaf-state ${activity.tone}">${activity.label}</span>
+          <span class="tree-leaf-chevron" aria-hidden="true">${isExpanded ? "접기" : "역할 보기"}</span>
+        </div>
+      </button>
+      <div class="tree-member-detail" ${isExpanded ? "" : "hidden"}>
+        <div class="tree-member-detail-head">
+          <p class="eyebrow">${memberOperatingMode(thread)}</p>
+          <strong>${safeLabel(memberRoleSummary(thread), "역할 정보 없음")}</strong>
+        </div>
+        <div class="stat-pills">
+          ${pillHtml("stat-pill", "진행중", `${runningCount}`, runningCount > 0 ? "tone-running" : "tone-neutral")}
+          ${pillHtml("stat-pill", "배정대기", `${waitingCount}`, waitingCount > 0 ? "tone-pending" : "tone-neutral")}
+          ${pillHtml("stat-pill", "보드", `${counts.all}`, "tone-neutral")}
+          ${pillHtml("stat-pill", "완료", `${counts.closed}`, counts.closed > 0 ? "tone-complete" : "tone-neutral")}
+          ${stats.oldestPendingMinutes > 0 ? pillHtml("stat-pill", "최대 지연", `${stats.oldestPendingMinutes}분`, "tone-pending") : ""}
+        </div>
+        ${detailBody}
+      </div>
+    </article>
+  `;
 }
 
 function renderOrgTree(threads) {
@@ -404,14 +542,7 @@ function renderOrgTree(threads) {
   ].filter((section) => section.items.length);
 
   const renderLeaf = (thread) => {
-    const title = safeLabel(thread.displayName || thread.title, "이름 복구 필요");
-    const activity = getMemberActivity(thread);
-    return `
-      <button class="tree-leaf" type="button" data-tree-member="${title}">
-        <span class="tree-leaf-name">${title}</span>
-        <span class="tree-leaf-state ${activity.tone}">${activity.label}</span>
-      </button>
-    `;
+    return buildOrgTreeMember(thread);
   };
 
   elements.orgTree.innerHTML = `
@@ -420,14 +551,8 @@ function renderOrgTree(threads) {
         <div class="tree-label tree-label-root">대표님</div>
       </div>
       <div class="tree-trunk">
-        <button class="tree-leaf tree-leaf-primary" type="button" data-tree-member="${secretary ? safeLabel(secretary.displayName || secretary.title, "[비서] 보고자") : "[비서] 보고자"}">
-          <span class="tree-leaf-name">${secretary ? safeLabel(secretary.displayName || secretary.title, "[비서] 보고자") : "[비서] 보고자"}</span>
-          <span class="tree-leaf-state ${getMemberActivity(secretary).tone}">${getMemberActivity(secretary).label}</span>
-        </button>
-        <button class="tree-leaf tree-leaf-primary" type="button" data-tree-member="${manager ? safeLabel(manager.displayName || manager.title, "[관리자] 사장") : "[관리자] 사장"}">
-          <span class="tree-leaf-name">${manager ? safeLabel(manager.displayName || manager.title, "[관리자] 사장") : "[관리자] 사장"}</span>
-          <span class="tree-leaf-state ${getMemberActivity(manager).tone}">${getMemberActivity(manager).label}</span>
-        </button>
+        ${secretary ? buildOrgTreeMember(secretary, { primary: true }) : ""}
+        ${manager ? buildOrgTreeMember(manager, { primary: true }) : ""}
       </div>
       <div class="tree-branches">
         ${sections
@@ -451,6 +576,8 @@ function renderOrgTree(threads) {
       const title = node.getAttribute("data-tree-member") || "";
       state.selectedMemberTitle = title;
       state.selectedFlowId = "";
+      state.expandedOrgMemberTitle = state.expandedOrgMemberTitle === title ? "" : title;
+      expandGroupForMember(title);
       renderWorkspace();
     });
   });
@@ -462,6 +589,24 @@ function getFlows() {
 
 function getConversation() {
   return Array.isArray(state.snapshot?.conversation) ? state.snapshot.conversation : [];
+}
+
+function ensureConversation() {
+  if (!state.snapshot) {
+    state.snapshot = { conversation: [] };
+    return state.snapshot.conversation;
+  }
+  if (!Array.isArray(state.snapshot.conversation)) {
+    state.snapshot.conversation = [];
+  }
+  return state.snapshot.conversation;
+}
+
+function upsertConversationMessage(message) {
+  if (!message || !message.id) return;
+  const conversation = ensureConversation();
+  if (conversation.some((item) => item.id === message.id)) return;
+  conversation.push(message);
 }
 
 function topicTitleForItem(item) {
@@ -527,39 +672,43 @@ function getAssignmentState(assignment) {
 function getMemberActivity(member) {
   const title = member?.displayName || member?.title || "";
   if (!title) return { tone: "idle", label: "대기", detail: "" };
-  const queueItems = memberQueueItems(member);
-  if (!queueItems.length) {
-    return { tone: "idle", label: "대기", detail: "현재 맡은 일이 없습니다." };
+  const counts = memberFlowCounts(member);
+  const runningCount = memberRunningCount(member, counts);
+  const waitingCount = memberWaitingCount(member, counts);
+  const closedCount = counts.closed;
+
+  if (title === "[관리자] 사장") {
+    if (runningCount > 0) {
+      return { tone: "active", label: "오케스트레이션 중", detail: `열린 흐름 ${Math.max(counts.active + counts.waiting, runningCount)}건` };
+    }
+    if (waitingCount > 0) {
+      return { tone: "waiting", label: "배정 조율 중", detail: `열린 흐름 ${Math.max(counts.active + counts.waiting, waitingCount)}건` };
+    }
+    if (closedCount > 0) {
+      return { tone: "idle", label: "최근 승인 완료", detail: `${closedCount}건 정리` };
+    }
+    return { tone: "idle", label: "대기", detail: "지금은 새 지시를 기다리는 중입니다." };
+  }
+  if (title === "[비서] 보고자") {
+    if (runningCount > 0) {
+      return { tone: "active", label: "브리핑 중", detail: `${runningCount}건 정리 중` };
+    }
+    if (waitingCount > 0) {
+      return { tone: "waiting", label: "접수 대기", detail: `${waitingCount}건 접수됨` };
+    }
+    if (closedCount > 0) {
+      return { tone: "idle", label: "최근 접수 완료", detail: `${closedCount}건 보고 완료` };
+    }
+    return { tone: "idle", label: "대기", detail: "현재 새 지시를 기다리는 중입니다." };
   }
 
-  let activeCount = 0;
-  let waitingCount = 0;
-  let closedCount = 0;
-  for (const flow of queueItems) {
-    const assignments = Array.isArray(flow.assignments) ? flow.assignments : [];
-    if (title === "[관리자] 사장" || title === "[비서] 보고자") {
-      if (assignments.some((item) => getAssignmentState(item) !== "closed")) {
-        activeCount += 1;
-      } else {
-        waitingCount += 1;
-      }
-      continue;
-    }
-    const matched = assignments.filter((item) => item.helperTitle === title);
-    if (!matched.length) continue;
-    for (const assignment of matched) {
-      const stateName = getAssignmentState(assignment);
-      if (stateName === "active") activeCount += 1;
-      else if (stateName === "waiting") waitingCount += 1;
-      else if (stateName === "closed") closedCount += 1;
-    }
-  }
-
-  if (activeCount > 0) {
-    return { tone: "active", label: "일 중", detail: `${activeCount}건 진행 중` };
+  if (runningCount > 0) {
+    const label = title.includes("팀장") ? "분업 진행 중" : title.startsWith("[협력") ? "지원 중" : "일 중";
+    return { tone: "active", label, detail: `${runningCount}건 진행 중` };
   }
   if (waitingCount > 0) {
-    return { tone: "waiting", label: "대기 중", detail: `${waitingCount}건 대기 중` };
+    const label = title.includes("팀장") ? "배정 대기" : title.startsWith("[협력") ? "호출 대기" : "대기 중";
+    return { tone: "waiting", label, detail: `${waitingCount}건 대기 중` };
   }
   if (closedCount > 0) {
     return { tone: "idle", label: "최근 완료", detail: `${closedCount}건 완료` };
@@ -599,6 +748,14 @@ function flowStateForMember(flow, member) {
   return "closed";
 }
 
+function flowOverallState(flow) {
+  const assignments = Array.isArray(flow?.assignments) ? flow.assignments : [];
+  if (!assignments.length) return "waiting";
+  if (assignments.some((entry) => getAssignmentState(entry) === "active")) return "active";
+  if (assignments.some((entry) => getAssignmentState(entry) === "waiting")) return "waiting";
+  return "closed";
+}
+
 function setActiveTab(tabId) {
   state.selectedTab = tabId;
   elements.tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === tabId));
@@ -606,27 +763,37 @@ function setActiveTab(tabId) {
 }
 
 function buildSummaryCards() {
-  const overview = state.snapshot?.overview || {};
+  const flows = getFlows();
+  const reports = getConversation().filter((item) => item.kind === "result" && visibleReportLinks(item.report).length);
+  const activeCount = flows.filter((flow) => flowOverallState(flow) === "active").length;
+  const waitingCount = flows.filter((flow) => flowOverallState(flow) === "waiting").length;
+  const closedCount = flows.filter((flow) => flowOverallState(flow) === "closed").length;
   const cards = [
     {
-      label: "비서 · 사장",
-      value: "선접수 · 기술선별 · 최종 실행",
-      detail: "비서가 먼저 접수하고 스킬과 요약을 고른 뒤, 사장이 직접 처리 또는 팀 위임을 결정합니다.",
+      label: "진행중/대기",
+      value: `${activeCount + waitingCount}건`,
+      detail: `진행중 ${activeCount} · 대기 ${waitingCount}`,
     },
     {
-      label: "1팀",
-      value: `${overview.helpers?.pendingAssignmentCount ?? 0}건 배정 추적`,
-      detail: "실행 계열 진단, 준비, 검증을 맡습니다.",
+      label: "배정대기",
+      value: `${waitingCount}건`,
+      detail: waitingCount
+        ? "비서 접수 뒤 사장 배정이나 협력 호출을 기다리는 흐름입니다."
+        : "지금 배정 대기 중인 흐름은 없습니다.",
     },
     {
-      label: "2팀",
-      value: `${overview.scheduler?.openJobCount ?? 0}건 오픈`,
-      detail: "구조, 큐, 정리, 보고 흐름을 맡습니다.",
+      label: "완료",
+      value: `${closedCount}건`,
+      detail: closedCount
+        ? "최근 완료되었거나 닫힌 흐름입니다."
+        : "아직 완료로 정리된 흐름이 없습니다.",
     },
     {
-      label: "협력",
-      value: `${getThreads().filter((item) => String(item.displayName || "").startsWith("[협력")).length}개 전문 채널`,
-      detail: "메일, KVM, 런타임, 큐 같은 공통 업무를 지원합니다.",
+      label: "보고서",
+      value: `${reports.length}개`,
+      detail: reports.length
+        ? "완료 카드에서 HTML 또는 MD 결과를 바로 열 수 있습니다."
+        : "완료 보고서가 아직 연결되지 않았습니다.",
     },
   ];
 
@@ -645,12 +812,44 @@ function buildSummaryCards() {
 
 function renderBanner() {
   const alerts = Array.isArray(state.snapshot?.alerts) ? state.snapshot.alerts : [];
-  if (!alerts.length) {
+  const resourceReasons = Array.isArray(state.snapshot?.watchdog?.reasons) ? state.snapshot.watchdog.reasons : [];
+  if (!alerts.length && !resourceReasons.length) {
     elements.globalBanner.hidden = true;
     elements.globalBanner.textContent = "";
     return;
   }
-  const alert = alerts[0];
+
+  if (resourceReasons.length) {
+    const reasonLabels = {
+      user_active: "사용 중",
+      high_cpu: "CPU 사용률 높음",
+      low_memory: "메모리 부족",
+      codex_memory_high: "Codex 메모리 사용량 높음",
+      chrome_memory_high: "Chrome 메모리 사용량 높음",
+      gpu_busy: "GPU 사용률 높음",
+      gpu_memory_high: "GPU 메모리 사용량 높음",
+    };
+    const detail = resourceReasons
+      .map((reason) => reasonLabels[String(reason).toLowerCase()] || reason)
+      .filter(Boolean)
+      .join(", ");
+    const message = detail ? `${detail} · 조건이 풀리면 자동 실행됩니다.` : "조건이 풀리면 자동 실행됩니다.";
+    elements.globalBanner.hidden = false;
+    elements.globalBanner.textContent = `자원 사용량 때문에 대기: ${message}`;
+    return;
+  }
+
+  const resourceGuard = alerts.find(
+    (item) =>
+      String(item?.title || "").includes("자원") ||
+      String(item?.title || "").toLowerCase().includes("resource") ||
+      String(item?.detail || "").toLowerCase().includes("user_active"),
+  );
+  const levelRank = { critical: 3, warn: 2, info: 1 };
+  const sorted = [...alerts].sort(
+    (left, right) => (levelRank[right.level] || 0) - (levelRank[left.level] || 0),
+  );
+  const alert = resourceGuard || sorted[0];
   elements.globalBanner.hidden = false;
   elements.globalBanner.textContent = `${alert.title}: ${alert.detail}`;
 }
@@ -723,7 +922,7 @@ function renderMembers() {
     elements.boardPaneMembers.classList.toggle("tree-mode", focusMembers);
   }
   if (elements.memberMode) {
-    elements.memberMode.textContent = focusMembers ? "트리 보기" : "카드 보기";
+    elements.memberMode.textContent = focusMembers ? "조직도 보기" : "카드 보기";
   }
   if (elements.orgTree) {
     elements.orgTree.hidden = !focusMembers;
@@ -764,13 +963,12 @@ function renderMembers() {
     if (!group.items.length) continue;
     const totals = group.items.reduce(
       (acc, item) => {
-        const stats = item.stats || {};
-        acc.queued += Number(stats.queued || 0);
-        acc.running += Number(stats.running || 0);
-        acc.pending += Number(stats.pending || 0);
+        const counts = memberFlowCounts(item);
+        acc.running += memberRunningCount(item, counts);
+        acc.pending += memberWaitingCount(item, counts);
         return acc;
       },
-      { queued: 0, running: 0, pending: 0 }
+      { running: 0, pending: 0 }
     );
     const isExpanded = !!state.expandedMemberGroups[group.key];
     const section = document.createElement("section");
@@ -782,7 +980,7 @@ function renderMembers() {
         </div>
         <div class="member-group-meta">
           <span class="member-group-count">${group.items.length}명</span>
-          <span class="member-group-summary">일중 ${totals.running} · 대기중 ${totals.queued + totals.pending}</span>
+          <span class="member-group-summary">진행 ${totals.running} · 배정대기 ${totals.pending}</span>
           <span class="member-group-chevron" aria-hidden="true">${isExpanded ? "−" : "+"}</span>
         </div>
       </button>
@@ -875,33 +1073,24 @@ function renderBoardPaneFocus() {
 
 function renderMemberSummary(member) {
   if (!member) return;
-  const items = memberQueueItems(member);
+  const counts = memberFlowCounts(member);
+  const stats = getThreadStats(member);
   const active = selectedFlow(member);
   const activity = getMemberActivity(member);
   elements.selectedMemberName.textContent = member.displayName || member.title;
   if (elements.selectedMemberRole) {
-    elements.selectedMemberRole.textContent = "";
+    elements.selectedMemberRole.textContent = memberRoleSummary(member);
   }
   elements.selectedMemberStatus.textContent = active
     ? `${activity.label} · ${active.routeLabel || active.route || "진행 중"}`
-    : `${activity.label}${activity.detail ? ` 쨌 ${activity.detail}` : ""}`;
+    : `${activity.label}${activity.detail ? ` · ${activity.detail}` : ""}`;
   elements.selectedMemberStats.innerHTML = "";
-  const stats = items.reduce(
-    (acc, flow) => {
-      const stateName = flowStateForMember(flow, member);
-      acc.all += 1;
-      if (stateName === "active") acc.active += 1;
-      else if (stateName === "waiting") acc.waiting += 1;
-      else acc.closed += 1;
-      return acc;
-    },
-    { all: 0, active: 0, waiting: 0, closed: 0 },
-  );
   const chips = [
-    ["전체", `${stats.all}건`],
-    ["진행중", `${stats.active}`],
-    ["대기중", `${stats.waiting}`],
-    ["완료", `${stats.closed}`],
+    ["역할", memberOperatingMode(member)],
+    ["보드", `${counts.all}건`],
+    ["진행중", `${Math.max(counts.active, stats.running)}`],
+    ["배정대기", `${Math.max(counts.waiting, stats.pending + stats.queued)}`],
+    ["완료", `${counts.closed}`],
   ];
   for (const [label, value] of chips) {
     const node = document.createElement("span");
@@ -1000,22 +1189,16 @@ function renderProgress(member) {
       <div class="detail-row"><dt>출발 스레드</dt><dd>${safeLabel(flow.sourceTitle, "-")}</dd></div>
       <div class="detail-row"><dt>메모</dt><dd>${safeLabel(flow.sourceNotes, "-")}</dd></div>
     </dl>
-    <details class="detail-expand">
-      <summary>작업 원문 전체 보기</summary>
-      <pre class="detail-fulltext">${taskFullText}</pre>
-    </details>
+    <pre class="detail-fulltext">${taskFullText}</pre>
   `;
   elements.progressPanel.appendChild(top);
 
   const promptChain = document.createElement("article");
   promptChain.className = "detail-card";
   promptChain.innerHTML = `
-    <p class="eyebrow">프롬프트 체인</p>
-    <strong>대표님 -> 비서 -> 사장 -> 팀/협력 전달 흐름</strong>
-    <details class="detail-expand" open>
-      <summary>대표님 접수 원문 보기</summary>
-      <pre class="detail-fulltext">${taskFullText}</pre>
-    </details>
+    <p class="eyebrow">전달 체인</p>
+    <strong>대표님 -> 비서 -> 사장 -> 팀/협력</strong>
+    <p class="detail-copy">아래에서 각 대상에게 실제로 전달된 전체 프롬프트를 바로 볼 수 있습니다.</p>
     <div class="prompt-chain-list"></div>
   `;
   const promptChainList = promptChain.querySelector(".prompt-chain-list");
@@ -1179,12 +1362,17 @@ function renderReportLibrary() {
 function renderSettings() {
   const publicTunnel = state.snapshot?.paths?.publicTunnelStatus || "";
   const overview = state.snapshot?.overview || {};
+  const accessPolicyLabel = state.auth.mode === "trusted-local"
+    ? "로컬 신뢰 접속 / 원격 코드 로그인"
+    : "접속 코드 로그인";
   elements.settingsPanel.innerHTML = `
     <article class="setting-card">
       <p class="eyebrow">접속 정책</p>
-      <strong>${state.auth.mode === "trusted-local" ? "로컬 무로그인" : "원격 코드 로그인"}</strong>
+      <strong>${accessPolicyLabel}</strong>
       <p class="setting-copy">${state.auth.message || ""}</p>
       <dl>
+        <div><dt>전달 메일</dt><dd>${state.auth.deliveryTarget || "-"}</dd></div>
+        <div><dt>코드 백업 파일</dt><dd>${state.auth.deliveryFallback || "-"}</dd></div>
         <div><dt>public tunnel 상태 파일</dt><dd>${publicTunnel || "-"}</dd></div>
         <div><dt>runtime root</dt><dd>${state.snapshot?.paths?.runtimeRoot || "-"}</dd></div>
       </dl>
@@ -1229,14 +1417,21 @@ function renderWorkspace() {
 
 function renderAuthGate() {
   const gateVisible = state.auth.requiresLogin && !state.auth.authenticated;
+  const isCodeLogin = state.auth.mode === "code-login";
   elements.authGate.hidden = !gateVisible;
-  elements.logoutButton.hidden = !state.auth.authenticated || state.auth.mode !== "remote-code";
+  elements.logoutButton.hidden = !isCodeLogin || !state.auth.authenticated;
   elements.sendButton.disabled = gateVisible;
   elements.micButton.disabled = gateVisible;
   elements.promptInput.disabled = gateVisible;
-  elements.accessMode.textContent = state.auth.mode === "trusted-local" ? "로컬 무로그인" : "원격 코드 로그인";
-  elements.sessionExpiresAt.textContent = state.auth.sessionExpiresAt ? formatTimestamp(state.auth.sessionExpiresAt) : "-";
-  elements.authHint.textContent = state.auth.message || "";
+  elements.accessMode.textContent = isCodeLogin ? "접속 코드 로그인" : "로컬 신뢰 접속";
+  elements.sessionExpiresAt.textContent =
+    isCodeLogin && state.auth.sessionExpiresAt ? formatTimestamp(state.auth.sessionExpiresAt) : "-";
+  const hintParts = [
+    state.auth.message || "",
+    isCodeLogin && state.auth.deliveryTarget ? `대표님 메일: ${state.auth.deliveryTarget}` : "",
+    isCodeLogin && state.auth.codeIssuedAt ? `발급: ${formatTimestamp(state.auth.codeIssuedAt)}` : "",
+  ].filter(Boolean);
+  elements.authHint.textContent = hintParts.join(" · ");
   if (gateVisible) {
     window.setTimeout(() => elements.codeInput.focus(), 60);
   }
@@ -1247,10 +1442,14 @@ async function syncAuthState() {
   state.auth = {
     authenticated: Boolean(payload.authenticated),
     requiresLogin: Boolean(payload.requiresLogin),
-    mode: payload.mode || "trusted-local",
+    mode: payload.mode || "code-login",
     csrfToken: payload.csrfToken || "",
     sessionExpiresAt: payload.sessionExpiresAt || "",
     message: payload.message || "",
+    codeIssuedAt: payload.codeIssuedAt || "",
+    deliveryPrimary: payload.deliveryPrimary || "",
+    deliveryTarget: payload.deliveryTarget || "",
+    deliveryFallback: payload.deliveryFallback || "",
   };
   renderAuthGate();
 }
@@ -1312,13 +1511,17 @@ async function submitAuth(event) {
       body: JSON.stringify({ code }),
     });
     state.auth.authenticated = Boolean(payload.auth?.authenticated);
-    state.auth.mode = payload.auth?.mode || "remote-code";
-    state.auth.requiresLogin = true;
+    state.auth.mode = payload.auth?.mode || "code-login";
+    state.auth.requiresLogin = Boolean(payload.auth?.requiresLogin ?? true);
     state.auth.csrfToken = payload.auth?.csrfToken || "";
     state.auth.sessionExpiresAt = payload.auth?.sessionExpiresAt || "";
+    state.auth.codeIssuedAt = payload.auth?.codeIssuedAt || "";
+    state.auth.deliveryPrimary = payload.auth?.deliveryPrimary || "";
+    state.auth.deliveryTarget = payload.auth?.deliveryTarget || "";
+    state.auth.deliveryFallback = payload.auth?.deliveryFallback || "";
     renderAuthGate();
     startRefreshLoop();
-    showToast("로그인 완료", "이제 공개 링크에서도 관제 화면을 볼 수 있습니다.");
+    showToast("로그인 완료", "이제 폰과 PC 모두 같은 접속 코드로 관제 화면을 사용할 수 있습니다.");
     await refreshSnapshot();
   } catch (error) {
     showToast("로그인 실패", error.message);
@@ -1374,7 +1577,7 @@ async function submitCommand(event) {
   const title = member?.displayName || "[관리자] 사장";
   elements.sendButton.disabled = true;
   try {
-    await fetchJson(
+    const payload = await fetchJson(
       "/api/commands",
       {
         method: "POST",
@@ -1387,9 +1590,12 @@ async function submitCommand(event) {
       },
       { includeCsrf: true },
     );
+    if (payload?.userMessage) upsertConversationMessage(payload.userMessage);
+    if (payload?.statusMessage) upsertConversationMessage(payload.statusMessage);
     elements.promptInput.value = "";
     saveDraft("");
     autosizeTextarea();
+    renderConversation();
     showToast("지시 전달 완료", "[비서] 보고자가 먼저 접수하고 스킬을 정리한 뒤, [관리자] 사장이 내부 위임 여부를 판단합니다.");
     await refreshSnapshot();
   } catch (error) {

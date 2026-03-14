@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-store, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="/styles.css?v=20260314-2359">
+  <link rel="stylesheet" href="/styles.css?v=20260315-0105-dashboard">
 </head>
 <body>
   <div class="bg-orb orb-one" aria-hidden="true"></div>
@@ -16,9 +16,9 @@
   <div id="authGate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="authTitle">
     <section class="auth-card">
       <p class="eyebrow">Remote Access</p>
-      <h1 id="authTitle">접속 코드로 바로 들어가기</h1>
+      <h1 id="authTitle">외부 접속은 코드로 들어가기</h1>
       <p class="auth-copy">
-        같은 PC나 사설망에서는 바로 열리고, 외부 접속일 때만 접속 코드로 보호됩니다.
+        현재 PC의 localhost 접속은 바로 열리고, 다른 기기나 외부 접속만 접속 코드 로그인이 필요합니다.
       </p>
       <form id="authForm" class="auth-form" autocomplete="off">
         <label class="field">
@@ -138,7 +138,7 @@
               </div>
             </div>
             <div id="memberList" class="member-list" role="listbox" aria-label="구성원 목록"></div>
-            <div id="orgTree" class="org-tree" hidden aria-label="운영 조직 트리"></div>
+            <div id="orgTree" class="org-tree" hidden aria-label="운영 조직도 트리"></div>
           </section>
 
           <section id="boardPaneQueue" class="pane surface board-pane" data-pane="queue">
@@ -186,10 +186,10 @@
             <form id="composerForm" class="composer" autocomplete="off">
               <div class="composer-meta">
                 <span id="composerTargetMeta">대상 -</span>
-                <span id="composerHint">대표님 지시는 먼저 [비서] 보고자가 받습니다. 비서가 정리한 뒤 [관리자] 사장이 직접 처리 또는 팀 위임을 결정합니다.</span>
+                <span id="composerHint">대표님 지시는 먼저 [비서] 보고자가 받습니다. 비서가 정리하고 필요한 스킬 후보를 고른 뒤, [관리자] 사장이 직접 처리 또는 팀 위임을 결정합니다.</span>
               </div>
               <label class="composer-shell" for="promptInput">
-                <textarea id="promptInput" rows="5" maxlength="4000" placeholder="예: 비서가 먼저 요청을 정리하고 필요한 skill 후보를 고른 뒤, 사장이 직접 할지 팀에 위임할지 판단해줘."></textarea>
+                <textarea id="promptInput" rows="5" maxlength="4000" placeholder="예) 비서가 먼저 요청을 정리하고 필요한 skill 후보를 고른 뒤 사장이 직접 할지 팀에 넘길지 판단해줘."></textarea>
               </label>
               <div class="composer-actions">
                 <button id="sendButton" class="primary-button" type="submit">보내기</button>
@@ -252,6 +252,6 @@
     </div>
   </template>
 
-  <script src="/app.js?v=20260314-2359"></script>
+  <script src="/app.js?v=20260315-0105-dashboard"></script>
 </body>
 </html>
