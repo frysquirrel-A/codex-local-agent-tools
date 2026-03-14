@@ -1443,7 +1443,11 @@ class ControlCenterHandler(SimpleHTTPRequestHandler):
                 filename = Path(parsed.path).name
                 self._send_file_response(self.runtime_paths.helper_reports_root / filename)
                 return
-            return super().do_GET()
+            static_path = self.static_root / (parsed.path.lstrip("/") or "index.html")
+            if parsed.path == "/":
+                static_path = self.static_root / "index.html"
+            self._send_file_response(static_path)
+            return
         except ApiError as exc:
             self._send_json(exc.status, {"ok": False, "error": exc.code, "detail": exc.detail, **exc.extra})
 
@@ -1588,7 +1592,12 @@ class ControlCenterHandler(SimpleHTTPRequestHandler):
 
     def guess_type(self, path: str) -> str:
         mime, _ = mimetypes.guess_type(path)
-        return mime or "application/octet-stream"
+        mime = mime or "application/octet-stream"
+        if mime.startswith("text/"):
+            return f"{mime}; charset=utf-8"
+        if mime in {"application/javascript", "application/json"}:
+            return f"{mime}; charset=utf-8"
+        return mime
 
 
 def ensure_async_worker(runtime_paths: RuntimePaths) -> None:

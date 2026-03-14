@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-store, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="/styles.css?v=20260314-2348">
+  <link rel="stylesheet" href="/styles.css?v=20260314-2359">
 </head>
 <body>
   <div class="bg-orb orb-one" aria-hidden="true"></div>
@@ -16,16 +16,16 @@
   <div id="authGate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="authTitle">
     <section class="auth-card">
       <p class="eyebrow">Remote Access</p>
-      <h1 id="authTitle">?묒냽 肄붾뱶濡?諛붾줈 ?ㅼ뼱媛湲?/h1>
+      <h1 id="authTitle">접속 코드로 바로 들어가기</h1>
       <p class="auth-copy">
-        媛숈? PC???ъ꽕留앹뿉?쒕뒗 諛붾줈 ?대━怨? ?몃? 留곹겕?먯꽌???묒냽 肄붾뱶濡쒕쭔 蹂댄샇?⑸땲??
+        같은 PC나 사설망에서는 바로 열리고, 외부 접속일 때만 접속 코드로 보호됩니다.
       </p>
       <form id="authForm" class="auth-form" autocomplete="off">
         <label class="field">
-          <span>?묒냽 肄붾뱶</span>
+          <span>접속 코드</span>
           <input id="codeInput" type="text" placeholder="CC-1234-ABCD-EF12" autocomplete="one-time-code">
         </label>
-        <button id="authSubmit" class="primary-button" type="submit">?ㅼ뼱媛湲?/button>
+        <button id="authSubmit" class="primary-button" type="submit">들어가기</button>
       </form>
       <p id="authHint" class="auth-footnote"></p>
     </section>
@@ -35,15 +35,15 @@
     <header class="topbar surface">
       <div class="topbar-copy">
         <p class="eyebrow">Codex Control Plane</p>
-        <h1>?ㅼ떆媛???愿?쒗깙</h1>
-        <p class="subtitle">愿由ъ옄???뱀씤怨?理쒖쥌 ?ㅽ뻾留?留↔퀬, ??κ낵 ?묐젰 ?ㅻ젅?쒓? 遺꾩꽍怨?以鍮꾨? 吏꾪뻾?⑸땲??</p>
+        <h1>실시간 큐 관제탑</h1>
+        <p class="subtitle">대표님 지시는 비서가 먼저 정리하고, 사장이 직접 처리 또는 팀 위임을 결정합니다.</p>
       </div>
 
-      <section id="resourceCard" class="resource-card topbar-resource" aria-label="濡쒖뺄 PC ?먯썝 ?ъ슜??>
+      <section id="resourceCard" class="resource-card topbar-resource" aria-label="로컬 PC 자원 사용량">
         <div class="resource-head">
           <div>
             <span class="eyebrow">Local Resources</span>
-            <strong>CPU / 硫붾え由?/ GPU / Codex ?쒕룄</strong>
+            <strong>CPU / 메모리 / GPU / Codex 한도</strong>
           </div>
           <span id="resourceUpdatedAt" class="resource-updated">-</span>
         </div>
@@ -60,7 +60,7 @@
           </article>
           <article class="resource-metric">
             <div class="resource-copy">
-              <span>硫붾え由?/span>
+              <span>메모리</span>
               <strong id="memoryValue">-</strong>
             </div>
             <div class="chart-shell">
@@ -80,7 +80,7 @@
           </article>
           <article class="resource-metric">
             <div class="resource-copy">
-              <span>Codex ?쒕룄</span>
+              <span>Codex 한도</span>
               <strong id="quotaValue">-</strong>
             </div>
             <div class="chart-shell">
@@ -93,34 +93,34 @@
 
       <div class="topbar-actions">
         <div class="chip">
-          <span>理쒓렐 媛깆떊</span>
+          <span>최근 갱신</span>
           <strong id="generatedAt">-</strong>
         </div>
         <div class="chip">
-          <span>?묒냽 紐⑤뱶</span>
+          <span>접속 모드</span>
           <strong id="accessMode">-</strong>
         </div>
         <div class="chip">
-          <span>?몄뀡 留뚮즺</span>
+          <span>세션 만료</span>
           <strong id="sessionExpiresAt">-</strong>
         </div>
         <div class="chip">
-          <span>?쇱씠釉?媛깆떊</span>
-          <strong id="syncState">?곌껐 以?/strong>
+          <span>라이브 갱신</span>
+          <strong id="syncState">실시간 연결</strong>
         </div>
-        <button id="themeToggle" class="secondary-button" type="button" aria-pressed="false">?쇨컙 紐⑤뱶</button>
-        <button id="logoutButton" class="ghost-button" type="button" hidden>濡쒓렇?꾩썐</button>
+        <button id="themeToggle" class="secondary-button" type="button" aria-pressed="false">야간 모드</button>
+        <button id="logoutButton" class="ghost-button" type="button" hidden>로그아웃</button>
       </div>
     </header>
 
     <section id="summaryCards" class="summary-grid"></section>
     <div id="globalBanner" class="global-banner" hidden></div>
 
-    <nav class="tabbar surface" aria-label="二쇱슂 ?붾㈃">
-      <button class="tab active" data-tab="board" type="button">愿??/button>
-      <button class="tab" data-tab="flows" type="button">?먮쫫</button>
-      <button class="tab" data-tab="reports" type="button">蹂닿퀬??/button>
-      <button class="tab" data-tab="settings" type="button">?ㅼ젙</button>
+    <nav class="tabbar surface" aria-label="주요 화면">
+      <button class="tab active" data-tab="board" type="button">관제</button>
+      <button class="tab" data-tab="flows" type="button">흐름</button>
+      <button class="tab" data-tab="reports" type="button">보고서</button>
+      <button class="tab" data-tab="settings" type="button">설정</button>
     </nav>
 
     <main class="tab-panels">
@@ -129,42 +129,42 @@
           <section id="boardPaneMembers" class="pane surface board-pane" data-pane="members">
             <div class="pane-head pane-head-toggle" data-pane-toggle="members" role="button" tabindex="0" aria-expanded="false">
               <div>
-                <p class="eyebrow">援ъ꽦??/p>
-                <h2>?댁쁺 議곗쭅??/h2>
+                <p class="eyebrow">구성원</p>
+                <h2>운영 조직도</h2>
               </div>
               <div class="pane-head-meta">
                 <span id="memberCount" class="pane-count">0</span>
-                <span id="memberMode" class="pane-mode">移대뱶 蹂닿린</span>
+                <span id="memberMode" class="pane-mode">카드 보기</span>
               </div>
             </div>
-            <div id="memberList" class="member-list" role="listbox" aria-label="援ъ꽦??紐⑸줉"></div>
-            <div id="orgTree" class="org-tree" hidden aria-label="?댁쁺 議곗쭅 ?몃━"></div>
+            <div id="memberList" class="member-list" role="listbox" aria-label="구성원 목록"></div>
+            <div id="orgTree" class="org-tree" hidden aria-label="운영 조직 트리"></div>
           </section>
 
           <section id="boardPaneQueue" class="pane surface board-pane" data-pane="queue">
             <div class="pane-head pane-head-toggle" data-pane-toggle="queue" role="button" tabindex="0" aria-expanded="false">
               <div>
-                <p class="eyebrow">?꾩옱 ??/p>
-                <h2 id="selectedMemberName">援ъ꽦?먯쓣 ?좏깮??二쇱꽭??/h2>
+                <p class="eyebrow">현재 큐</p>
+                <h2 id="selectedMemberName">구성원을 선택해 주세요</h2>
               </div>
               <span id="selectedMemberStatus" class="pane-status">-</span>
             </div>
             <div class="member-summary">
-              <p id="selectedMemberRole" class="member-role">?좏깮??援ъ꽦?먯쓽 ??븷怨??꾩옱 留≪? ?쇱씠 ?ш린???쒖떆?⑸땲??</p>
+              <p id="selectedMemberRole" class="member-role">선택한 구성원의 역할과 현재 맡은 일이 여기에 표시됩니다.</p>
               <div id="selectedMemberStats" class="stat-pills"></div>
             </div>
             <div class="queue-layout">
               <article class="subpane">
                 <div class="subpane-head">
-                  <h3>諛곗젙????/h3>
-                  <span id="queueCount">0嫄?/span>
+                  <h3>배정된 큐</h3>
+                  <span id="queueCount">0건</span>
                 </div>
                 <div id="queueFilters" class="queue-filters" aria-label="queue status filters"></div>
                 <div id="queueList" class="queue-list"></div>
               </article>
               <article class="subpane">
                 <div class="subpane-head">
-                  <h3>吏꾪뻾?ы빆</h3>
+                  <h3>진행사항</h3>
                   <span id="progressRoute">-</span>
                 </div>
                 <div id="progressPanel" class="progress-panel"></div>
@@ -175,24 +175,24 @@
           <section id="boardPaneConversation" class="pane surface board-pane" data-pane="conversation">
             <div class="pane-head pane-head-toggle" data-pane-toggle="conversation" role="button" tabindex="0" aria-expanded="false">
               <div>
-                <p class="eyebrow">??쒕떂 ???/p>
-                <h2 id="composerTargetTitle">[鍮꾩꽌] 蹂닿퀬?먯뿉寃?諛붾줈 吏??/h2>
+                <p class="eyebrow">대표님 대화</p>
+                <h2 id="composerTargetTitle">[비서] 보고자에게 바로 지시</h2>
               </div>
-              <button id="micButton" class="round-button" type="button" aria-pressed="false" aria-label="PTT ?좉?">
+              <button id="micButton" class="round-button" type="button" aria-pressed="false" aria-label="PTT 토글">
                 <span class="mic-dot" aria-hidden="true"></span>
               </button>
             </div>
 
             <form id="composerForm" class="composer" autocomplete="off">
               <div class="composer-meta">
-                <span id="composerTargetMeta">???-</span>
-                <span id="composerHint">?좏깮????곸뿉寃?異붽? 吏?쒕? 蹂대깄?덈떎.</span>
+                <span id="composerTargetMeta">대상 -</span>
+                <span id="composerHint">대표님 지시는 먼저 [비서] 보고자가 받습니다. 비서가 정리한 뒤 [관리자] 사장이 직접 처리 또는 팀 위임을 결정합니다.</span>
               </div>
               <label class="composer-shell" for="promptInput">
-                <textarea id="promptInput" rows="5" maxlength="4000" placeholder="?? 鍮꾩꽌媛 癒쇱? ???붿껌???뺣━?섍퀬 ?꾩슂???ㅽ궗怨??꾨떖 硫붾え瑜?怨좊Ⅸ ?? ?ъ옣???꾧뎄?먭쾶 留↔만吏 寃곗젙?댁쨾."></textarea>
+                <textarea id="promptInput" rows="5" maxlength="4000" placeholder="예: 비서가 먼저 요청을 정리하고 필요한 skill 후보를 고른 뒤, 사장이 직접 할지 팀에 위임할지 판단해줘."></textarea>
               </label>
               <div class="composer-actions">
-                <button id="sendButton" class="primary-button" type="submit">蹂대궡湲?/button>
+                <button id="sendButton" class="primary-button" type="submit">보내기</button>
               </div>
             </form>
             <article id="directiveHistory" class="directive-history"></article>
@@ -206,8 +206,8 @@
         <section class="pane surface">
           <div class="pane-head">
             <div>
-              <p class="eyebrow">?꾩껜 ?먮쫫</p>
-              <h2>理쒓렐 handoff? 吏꾪뻾 ?곹깭</h2>
+              <p class="eyebrow">전체 흐름</p>
+              <h2>최근 handoff와 진행 상태</h2>
             </div>
           </div>
           <div id="flowTimeline" class="flow-timeline"></div>
@@ -218,8 +218,8 @@
         <section class="pane surface">
           <div class="pane-head">
             <div>
-              <p class="eyebrow">蹂닿퀬??/p>
-              <h2>?꾨즺 寃곌낵? PDF</h2>
+              <p class="eyebrow">보고서</p>
+              <h2>완료 결과와 링크</h2>
             </div>
           </div>
           <div id="reportLibrary" class="report-library"></div>
@@ -230,8 +230,8 @@
         <section class="pane surface">
           <div class="pane-head">
             <div>
-              <p class="eyebrow">?댁쁺 ?ㅼ젙</p>
-              <h2>?묒냽怨?蹂댄샇 ?곹깭</h2>
+              <p class="eyebrow">운영 설정</p>
+              <h2>접속과 보호 상태</h2>
             </div>
           </div>
           <div id="settingsPanel" class="settings-panel"></div>
@@ -248,11 +248,10 @@
         <strong class="toast-title"></strong>
         <p class="toast-detail"></p>
       </div>
-      <button class="toast-close" type="button" aria-label="?뚮┝ ?リ린">?リ린</button>
+      <button class="toast-close" type="button" aria-label="알림 닫기">닫기</button>
     </div>
   </template>
 
-  <script src="/app.js?v=20260314-2348"></script>
+  <script src="/app.js?v=20260314-2359"></script>
 </body>
 </html>
-

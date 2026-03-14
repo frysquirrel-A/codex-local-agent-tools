@@ -219,10 +219,10 @@ function recordClientError(error) {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error || "unknown error");
   state.lastRenderError = message;
   if (elements.syncState) {
-    elements.syncState.textContent = "?ъ뿰寃??꾩슂";
+    elements.syncState.textContent = "재연결 필요";
     elements.syncState.className = "sync-stale";
   }
-  showToast("?곹깭 媛깆떊 ?ㅽ뙣", message, 6000);
+  showToast("상태 갱신 실패", message, 6000);
   try {
     console.error("[command-center]", message);
   } catch {
@@ -274,7 +274,7 @@ function applyTheme(theme, { persist = true } = {}) {
   state.theme = theme === "dark" ? "dark" : "light";
   document.body.dataset.theme = state.theme;
   elements.themeToggle.setAttribute("aria-pressed", state.theme === "dark" ? "true" : "false");
-  elements.themeToggle.textContent = state.theme === "dark" ? "二쇨컙 紐⑤뱶" : "?쇨컙 紐⑤뱶";
+  elements.themeToggle.textContent = state.theme === "dark" ? "주간 모드" : "야간 모드";
   if (!persist) return;
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, state.theme);
@@ -329,7 +329,7 @@ async function fetchJson(url, options = {}, { includeCsrf = false } = {}) {
   if (response.status === 401) {
     state.auth.authenticated = false;
     renderAuthGate();
-    throw new Error(payload.detail || "?묒냽 肄붾뱶 濡쒓렇?몄씠 ?꾩슂?⑸땲??");
+    throw new Error(payload.detail || "접속 코드 로그인이 필요합니다.");
   }
   if (!response.ok || payload.ok === false) {
     throw new Error(payload.detail || payload.error || `request failed: ${response.status}`);
@@ -570,7 +570,7 @@ function getMemberActivity(member) {
 function memberQueueItems(member) {
   const title = member?.displayName || member?.title || "";
   if (!title) return [];
-  if (title === "[비서] 보고자" || title === "[관리자] 사장" || title === "[愿由ъ옄] ?ъ옣") return getFlows();
+  if (title === "[비서] 보고자" || title === "[관리자] 사장") return getFlows();
   return getFlows().filter((flow) => {
     if (flow.sourceTitle === title) return true;
     return Array.isArray(flow.assignments) && flow.assignments.some((entry) => entry.helperTitle === title);
@@ -1272,7 +1272,7 @@ async function refreshSnapshot() {
     elements.micButton.classList.toggle("recording", state.recording);
     elements.micButton.setAttribute("aria-pressed", state.recording ? "true" : "false");
     if (elements.syncState) {
-      elements.syncState.textContent = "?ㅼ떆媛??곌껐";
+      elements.syncState.textContent = "실시간 연결";
       elements.syncState.className = "sync-live";
     }
     try {
@@ -1302,7 +1302,7 @@ async function submitAuth(event) {
   event.preventDefault();
   const code = elements.codeInput.value.trim();
   if (!code) {
-    showToast("?묒냽 肄붾뱶媛 鍮꾩뼱 ?덉뒿?덈떎", "硫붿떆吏??硫붿씪?먯꽌 諛쏆? 肄붾뱶瑜??낅젰??二쇱꽭??");
+    showToast("접속 코드가 비어 있습니다", "메일이나 안내 메시지에서 받은 코드를 입력해 주세요.");
     return;
   }
   elements.authSubmit.disabled = true;
@@ -1318,10 +1318,10 @@ async function submitAuth(event) {
     state.auth.sessionExpiresAt = payload.auth?.sessionExpiresAt || "";
     renderAuthGate();
     startRefreshLoop();
-    showToast("濡쒓렇???꾨즺", "?댁젣 怨듦컻 留곹겕?먯꽌???먯? 蹂닿퀬?쒕? 蹂????덉뒿?덈떎.");
+    showToast("로그인 완료", "이제 공개 링크에서도 관제 화면을 볼 수 있습니다.");
     await refreshSnapshot();
   } catch (error) {
-    showToast("濡쒓렇???ㅽ뙣", error.message);
+    showToast("로그인 실패", error.message);
   } finally {
     elements.authSubmit.disabled = false;
   }
@@ -1351,10 +1351,13 @@ async function togglePtt() {
     state.recording = Boolean(payload.ptt?.recording);
     elements.micButton.classList.toggle("recording", state.recording);
     elements.micButton.setAttribute("aria-pressed", state.recording ? "true" : "false");
-    showToast(state.recording ? "PTT ?쒖옉" : "PTT 醫낅즺", state.recording ? "?뚯꽦 ?몃━嫄곕? 耳곗뒿?덈떎." : "?뚯꽦 ?몃━嫄곕? 猿먯뒿?덈떎.");
+    showToast(
+      state.recording ? "PTT 시작" : "PTT 종료",
+      state.recording ? "음성 트리거를 켰습니다." : "음성 트리거를 껐습니다.",
+    );
     await refreshSnapshot();
   } catch (error) {
-    showToast("PTT ?꾪솚 ?ㅽ뙣", error.message);
+    showToast("PTT 전환 실패", error.message);
   }
 }
 
@@ -1363,12 +1366,12 @@ async function submitCommand(event) {
   if (state.inputComposing) return;
   const rawText = elements.promptInput.value.trim();
   if (!rawText) {
-    showToast("蹂대궪 ?댁슜???놁뒿?덈떎", "異붽? 吏?쒕굹 ?뺤씤 ?댁슜???낅젰??二쇱꽭??");
+    showToast("보낼 내용이 없습니다", "추가 지시나 확인 내용을 입력해 주세요.");
     return;
   }
   const member = selectedMember();
   const flow = selectedFlow(member);
-  const title = member?.displayName || "[愿由ъ옄] ?ъ옣";
+  const title = member?.displayName || "[관리자] 사장";
   elements.sendButton.disabled = true;
   try {
     await fetchJson(
